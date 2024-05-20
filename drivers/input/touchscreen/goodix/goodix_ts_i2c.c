@@ -89,9 +89,8 @@ static int goodix_parse_dt_resolution(struct device_node *node,
 	if (r)
 		err = -ENOENT;
 
-	board_data->swap_axis = of_property_read_bool(node,
-					"goodix,swap-axis");
-	board_data->x2x = of_property_read_bool(node, "goodix,x2x");
+	board_data->swap_axis = false;
+	board_data->x2x = false;
 	board_data->y2y = of_property_read_bool(node, "goodix,y2y");
 
 	return 0;
