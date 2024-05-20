@@ -1356,4 +1356,14 @@ source "drivers/input/touchscreen/focaltech_touch/Kconfig"
 
 source "drivers/input/touchscreen/nt36xxx/Kconfig"
 
+config TOUCHSCREEN_GOODIX_CHIPSET
+        bool "Goodix Touchscreen Driver"
+        depends on I2C
+        help
+          Say Y here if you have a Goodix Touchscreen.
+
+          If unsure, say N.
+
+source "drivers/input/touchscreen/goodix/Kconfig"
+
 endif
