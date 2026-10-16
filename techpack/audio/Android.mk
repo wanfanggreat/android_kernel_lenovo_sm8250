@@ -80,3 +80,8 @@ $(shell rm -rf $(PRODUCT_OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/codec
 include $(MY_LOCAL_PATH)/asoc/codecs/sdm660_cdc/Android.mk
 include $(MY_LOCAL_PATH)/asoc/codecs/msm_sdw/Android.mk
 endif
+
+# Cirrus Logic CS35L41 扬声器功放（TB-J716F：4 颗 I2C smart amplifier）
+ifeq ($(call is-board-platform-in-list, kona),true)
+include $(MY_LOCAL_PATH)/asoc/codecs/cs35l41/Android.mk
+endif
