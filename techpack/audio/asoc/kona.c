@@ -5402,6 +5402,140 @@ static struct snd_soc_ops msm_mi2s_be_ops = {
 	.shutdown = msm_mi2s_snd_shutdown,
 };
 
+/* ====================================================================
+ * CS35L41（Cirrus 代号 "prince"）扬声器功放
+ *
+ * TB-J716F 用 4 颗 CS35L41 替掉了参考设计里的 WSA883x：I2C 控制
+ * （i2c-2 的 0x40..0x43），音频走 PRI_MI2S，SoC 是 I2S master。
+ * DT 里 qcom,wsa-max-devs = 0，WSA 那套链路根本不生成；功放由
+ * sound 节点的 cirrus,prince-devs / cirrus,prince-dev-prefix 描述。
+ *
+ * 接法与原厂 audio_machine_kona.ko 一致（用 llvm-objdump 反汇编
+ * 原厂模块、按符号表核对过 msm_prince_be_dai_links / cs35l41_be_ops /
+ * cs35l41_mi2s_snd_init / cs35l41_snd_{startup,shutdown}_group1）：
+ * 把 PRI_MI2S_RX/TX 两条 BE 链路的 codec 从 msm-stub-codec 换成这
+ * 4 颗功放。是"替换"而不是"新增"——这两条链路的 id 就是
+ * MSM_BACKEND_DAI_PRI_MI2S_RX/TX，DSP 侧按 id 匹配 AFE 端口，
+ * 重复会出现两条链路抢同一个端口。
+ *
+ * 注意：不能把功放当 aux_dev 再挂 msm_aux_codec_init。那是 WCD 编解码
+ * 器专用的函数，开头就是 strncmp(component->driver->name, "wcd937x", 7)，
+ * 而 cs35l41 的 snd_soc_component_driver 没填 .name，driver->name 为
+ * NULL → 解引用 NULL → panic（2026-10-16 刷 batch8 后就是这么首屏重启的）。
+ * ================================================================== */
+#define CS35L41_CODEC_DAI_NAME	"cs35l41-pcm"
+/* I2S 位时钟：48kHz * 32bit = 1.536MHz，即原厂 init 下发的 0x177000 */
+#define CS35L41_MI2S_CLK_RATE	Q6AFE_LPASS_IBIT_CLK_1_P536_MHZ
+
+/* ASoC 组件名由 fmt_single_name() 生成：i2c 设备的 dev_name "2-0040"
+ * 会变成 "<driver>.<bus>-<addr>"（见 sound/soc/soc-core.c），
+ * 所以这里就是 cs35l41.2-0040 到 cs35l41.2-0043。 */
+static struct snd_soc_dai_link_component msm_prince_codec_components[] = {
+	{ .name = "cs35l41.2-0040", .dai_name = CS35L41_CODEC_DAI_NAME },
+	{ .name = "cs35l41.2-0041", .dai_name = CS35L41_CODEC_DAI_NAME },
+	{ .name = "cs35l41.2-0042", .dai_name = CS35L41_CODEC_DAI_NAME },
+	{ .name = "cs35l41.2-0043", .dai_name = CS35L41_CODEC_DAI_NAME },
+};
+
+/* 4 颗功放共用 PRI_MI2S 的一组时钟，只能整体开关：后起来的 stream
+ * 把引用计数加一就够，最后一个离场才真正停 MI2S。否则先起来的那条
+ * 会被后来者的 shutdown 顺手停掉时钟，声音断断续续。 */
+static atomic_t cs35l41_mclk_rsc_ref_group1 = ATOMIC_INIT(0);
+
+static int cs35l41_snd_startup_group1(struct snd_pcm_substream *substream)
+{
+	int ret;
+
+	if (atomic_add_return(1, &cs35l41_mclk_rsc_ref_group1) > 1)
+		return 0;
+
+	ret = msm_mi2s_snd_startup(substream);
+	if (ret) {
+		atomic_dec(&cs35l41_mclk_rsc_ref_group1);
+		pr_err("%s: Failed to startup mi2s: %d\n", __func__, ret);
+	}
+	return ret;
+}
+
+static void cs35l41_snd_shutdown_group1(struct snd_pcm_substream *substream)
+{
+	if (atomic_sub_return(1, &cs35l41_mclk_rsc_ref_group1) == 0)
+		msm_mi2s_snd_shutdown(substream);
+}
+
+static struct snd_soc_ops cs35l41_be_ops = {
+	.startup = cs35l41_snd_startup_group1,
+	.shutdown = cs35l41_snd_shutdown_group1,
+};
+
+/* 每颗功放要常驻（suspend 时不掉电）的 DAPM widget。名字带 SPKn 前缀，
+ * 是因为 DT 的 cirrus,prince-dev-prefix 经 codec_conf 变成 component 的
+ * name_prefix，cs35l41 自己的 "AMP Playback"/"SPK"/"VMON ADC"/"AMP Capture"
+ * 这些 widget 在注册时就被加上了前缀。顺序与 msm_prince_codec_components
+ * 一致：下标 0 = 0x40 = SPK1。 */
+static const char * const cs35l41_ignore_suspend_pins[][4] = {
+	{ "SPK1 AMP Playback", "SPK1 SPK", "SPK1 VMON ADC", "SPK1 AMP Capture" },
+	{ "SPK2 AMP Playback", "SPK2 SPK", "SPK2 VMON ADC", "SPK2 AMP Capture" },
+	{ "SPK3 AMP Playback", "SPK3 SPK", "SPK3 VMON ADC", "SPK3 AMP Capture" },
+	{ "SPK4 AMP Playback", "SPK4 SPK", "SPK4 VMON ADC", "SPK4 AMP Capture" },
+};
+
+static int cs35l41_mi2s_snd_init(struct snd_soc_pcm_runtime *rtd)
+{
+	struct snd_soc_dapm_context *dapm;
+	struct snd_soc_component *component;
+	struct snd_soc_dai *dai;
+	unsigned int i, j;
+	int ret;
+
+	atomic_set(&cs35l41_mclk_rsc_ref_group1, 0);
+
+	for (i = 0; i < rtd->num_codecs; i++) {
+		dai = rtd->codec_dais[i];
+		if (!dai || !dai->component)
+			continue;
+		component = dai->component;
+		dapm = snd_soc_component_get_dapm(component);
+
+		/* I2S，功放当时钟/帧从机（DT 里 qcom,msm-mi2s-master
+		 * 的第 0 位是 1，所以 SoC 出 BCLK/FSYNC）。 */
+		ret = snd_soc_dai_set_fmt(dai, SND_SOC_DAIFMT_I2S |
+					       SND_SOC_DAIFMT_CBS_CFS);
+		if (ret < 0) {
+			dev_err(rtd->dev, "%s: set_fmt failed: %d\n",
+				__func__, ret);
+			return -EINVAL;
+		}
+
+		ret = snd_soc_component_set_sysclk(component, 0, 0,
+						   CS35L41_MI2S_CLK_RATE,
+						   SND_SOC_CLOCK_IN);
+		if (ret < 0) {
+			dev_err(rtd->dev, "%s: set_sysclk failed: %d\n",
+				__func__, ret);
+			return -EINVAL;
+		}
+
+		ret = snd_soc_dai_set_sysclk(dai, 0, CS35L41_MI2S_CLK_RATE,
+					     SND_SOC_CLOCK_IN);
+		if (ret < 0) {
+			dev_err(rtd->dev, "%s: dai set_sysclk failed: %d\n",
+				__func__, ret);
+			return -EINVAL;
+		}
+
+		if (i >= ARRAY_SIZE(cs35l41_ignore_suspend_pins))
+			continue;
+
+		for (j = 0; j < ARRAY_SIZE(cs35l41_ignore_suspend_pins[0]); j++)
+			snd_soc_dapm_ignore_suspend(dapm,
+					cs35l41_ignore_suspend_pins[i][j]);
+		snd_soc_dapm_sync(dapm);
+	}
+
+	return 0;
+}
+
 static struct snd_soc_ops msm_fe_qos_ops = {
 	.prepare = msm_fe_qos_prepare,
 };
@@ -7638,6 +7772,7 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	u32 val = 0;
 	u32 wcn_btfm_intf = 0;
 	u32 wsa_max_devs = 0;
+	u32 prince_devs = 0;
 	const struct of_device_id *match;
 
 	match = of_match_node(kona_asoc_machine_of_match, dev->of_node);
@@ -7659,6 +7794,9 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		 * 因此仅在真正存在 WSA 设备时才挂这条链路。 */
 		of_property_read_u32(dev->of_node, "qcom,wsa-max-devs",
 				     &wsa_max_devs);
+		/* CS35L41 功放数量；有的话下面把 PRI_MI2S 让给它们 */
+		of_property_read_u32(dev->of_node, "cirrus,prince-max-devs",
+				     &prince_devs);
 
 		memcpy(msm_kona_dai_links + total_links,
 		       msm_common_dai_links,
@@ -7737,9 +7875,44 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 				__func__);
 		} else {
 			if (mi2s_audio_intf) {
+				struct snd_soc_dai_link *mi2s;
+
 				memcpy(msm_kona_dai_links + total_links,
 					msm_mi2s_be_dai_links,
 					sizeof(msm_mi2s_be_dai_links));
+				mi2s = msm_kona_dai_links + total_links;
+
+				/* CS35L41 功放接管 PRI_MI2S：把这两条
+				 * BE 链路的 codec 从 msm-stub-codec 换成
+				 * 4 颗 cs35l41（原厂也是这么干的）。
+				 * msm_mi2s_be_dai_links[] 的头两条正是
+				 * PRI_MI2S_RX / PRI_MI2S_TX，id 也正好是
+				 * MSM_BACKEND_DAI_PRI_MI2S_RX/TX。
+				 * codec_name/codec_dai_name 必须清空，否则
+				 * soc_bind_dai_link() 会按 codecs[] 绑定。 */
+				if (prince_devs) {
+					mi2s[0].codec_name = NULL;
+					mi2s[0].codec_dai_name = NULL;
+					mi2s[0].codecs =
+						msm_prince_codec_components;
+					mi2s[0].num_codecs = ARRAY_SIZE(
+						msm_prince_codec_components);
+					mi2s[0].init = &cs35l41_mi2s_snd_init;
+					mi2s[0].ops = &cs35l41_be_ops;
+
+					mi2s[1].codec_name = NULL;
+					mi2s[1].codec_dai_name = NULL;
+					mi2s[1].codecs =
+						msm_prince_codec_components;
+					mi2s[1].num_codecs = ARRAY_SIZE(
+						msm_prince_codec_components);
+					mi2s[1].ops = &cs35l41_be_ops;
+
+					dev_info(dev,
+						 "%s: PRI_MI2S_RX/TX 换成 %u 颗 CS35L41\n",
+						 __func__, prince_devs);
+				}
+
 				total_links +=
 					ARRAY_SIZE(msm_mi2s_be_dai_links);
 			}
@@ -8287,7 +8460,10 @@ codec_aux_dev:
 		 __func__, prince_found);
 
 aux_dev_register:
-	card->num_aux_devs = wsa_max_devs + codec_aux_dev_cnt + prince_max_devs;
+	/* CS35L41（prince）不在这里当 aux_dev：它们由
+	 * populate_snd_card_dailinks() 以 BE 链路的 codec 身份挂进来，
+	 * 这里只负责给它们配 name_prefix（走 codec_conf，见下）。 */
+	card->num_aux_devs = wsa_max_devs + codec_aux_dev_cnt;
 	card->num_configs = wsa_max_devs + codec_aux_dev_cnt + prince_max_devs;
 
 	/* Alloc array of AUX devs struct */
@@ -8353,6 +8529,16 @@ aux_dev_register:
 				aux_cdc_dev_info[i].of_node;
 	}
 
+	/* CS35L41（prince）只登记 codec_conf 里的 name_prefix。
+	 * 注意这里绝不能碰 msm_aux_dev[idx]：该数组只分配了
+	 * card->num_aux_devs = wsa + codec_aux 项，prince 的 idx 已经在
+	 * 数组之外（写它就是越界）。功放是通过
+	 * populate_snd_card_dailinks() 里的 BE 链路挂进来的。
+	 *
+	 * 另外也别想改回 aux_dev + msm_aux_codec_init：那个 init 是 WCD
+	 * 专用的，开头 strncmp(component->driver->name, "wcd937x", 7)，
+	 * cs35l41 没填 driver->name，会空指针 panic（2026-10-16 实测，
+	 * batch8 首屏重启循环的元凶）。 */
 	for (i = 0; i < prince_max_devs; i++) {
 		int idx = wsa_max_devs + codec_aux_dev_cnt + i;
 		const char *prince_prefix = NULL;
@@ -8363,10 +8549,6 @@ aux_dev_register:
 						  &prince_prefix))
 			prince_prefix = NULL;
 
-		msm_aux_dev[idx].name = NULL;
-		msm_aux_dev[idx].codec_name = NULL;
-		msm_aux_dev[idx].codec_of_node = prince_dev_info[i].of_node;
-		msm_aux_dev[idx].init = msm_aux_codec_init;
 		msm_codec_conf[idx].dev_name = NULL;
 		msm_codec_conf[idx].name_prefix = prince_prefix;
 		msm_codec_conf[idx].of_node = prince_dev_info[i].of_node;

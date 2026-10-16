@@ -2196,6 +2196,13 @@ static int cs35l41_dsp_init(struct cs35l41_private *cs35l41)
 	dsp->n_rx_channels = CS35L41_DSP_N_RX_RATES;
 	dsp->n_tx_channels = CS35L41_DSP_N_TX_RATES;
 	ret = wm_halo_init(dsp, &cs35l41->rate_lock);
+	if (ret < 0) {
+		/* wm_halo_init() 里 wm_adsp_create_name() 失败会提前 return，
+		 * 此时下面的 rx_rate_cache/tx_rate_cache 还没 kcalloc，
+		 * 继续走下去就是解引用 NULL → panic。原来这里没检查返回值。 */
+		dev_err(cs35l41->dev, "wm_halo_init failed: %d\n", ret);
+		return ret;
+	}
 	cs35l41->halo_booted = false;
 
 	for (i = 0; i < CS35L41_DSP_N_RX_RATES; i++)
