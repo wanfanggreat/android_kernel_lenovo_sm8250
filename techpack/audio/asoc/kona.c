@@ -7703,6 +7703,24 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		memcpy(msm_kona_dai_links + total_links,
 		       msm_rx_tx_cdc_dma_be_dai_links,
 		       sizeof(msm_rx_tx_cdc_dma_be_dai_links));
+		if (wsa_max_devs == 0) {
+			/* msm_int_audrx_init 原本挂在
+			 * msm_wsa_cdc_dma_be_dai_links[0]（WSA CDC DMA0
+			 * Playback）的 .init 上，负责往 bolero_codec 注册
+			 * msm_int_snd_controls[]——包含
+			 * "TX_CDC_DMA_TX_3 SampleRate/Channels/Format"
+			 * 以及 DAPM widget、port map、codec debugfs。
+			 * WSA 组被跳过时若不同时把 init 搬走，这些控件就
+			 * 全部不存在：HAL 取 mixer 控件
+			 * "TX_CDC_DMA_TX_3 SampleRate" 失败 →
+			 * platform_set_codec_backend_cfg 返回 -EINVAL →
+			 * pcm_prepare 失败 → AFE port 0xb037 打不开
+			 * (ADSP_EBADPARAM) → 麦克风采集全挂（录音静音）。
+			 * 故改挂到同样常驻、codec DAI 为 rx_macro_rx1
+			 * 的 RX_CDC_DMA_RX_0 链路上。 */
+			msm_kona_dai_links[total_links].init =
+							&msm_int_audrx_init;
+		}
 		total_links +=
 			ARRAY_SIZE(msm_rx_tx_cdc_dma_be_dai_links);
 
