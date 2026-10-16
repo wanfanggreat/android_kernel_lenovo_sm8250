@@ -8010,9 +8010,13 @@ static int msm_init_aux_dev(struct platform_device *pdev,
 	u32 wsa_dev_cnt;
 	u32 codec_max_aux_devs = 0;
 	u32 codec_aux_dev_cnt = 0;
+	u32 prince_max_devs = 0;
+	u32 prince_dev_cnt = 0;
+	u32 prince_found = 0;
 	int i;
 	struct msm_wsa881x_dev_info *wsa881x_dev_info = NULL;
 	struct aux_codec_dev_info *aux_cdc_dev_info = NULL;
+	struct aux_codec_dev_info *prince_dev_info = NULL;
 	const char *auxdev_name_prefix[1];
 	char *dev_name_str = NULL;
 	int found = 0;
@@ -8219,9 +8223,72 @@ codec_aux_dev:
 		"%s: found %d AUX codecs registered with ALSA core\n",
 		__func__, codecs_found);
 
+	/*
+	 * Cirrus Logic CS35L41 智能功放（TB-J716F：4 颗 I2C smart amp）。
+	 * 这些器件由 DT 的 cirrus,prince-devs 列出（每项一个 phandle），
+	 * 并用 cirrus,prince-dev-prefix 给出各自前缀（"SPK1".."SPK4"）。
+	 * 前缀经 msm_codec_conf[].name_prefix 交给 ASoC，控件名会变成
+	 * "SPK1 AMP PCM Gain" 这样，正好对上 mixer_paths.xml。
+	 * 注意：prince 是独立于 qcom,codec-aux-devs 的另一组 aux device，
+	 * 两者各自计数、追加到同一张 aux_dev 数组末尾。
+	 */
+	ret = of_property_read_u32(pdev->dev.of_node,
+				   "cirrus,prince-max-devs", &prince_max_devs);
+	if (ret || prince_max_devs == 0)
+		goto aux_dev_register;
+
+	prince_dev_cnt = of_count_phandle_with_args(pdev->dev.of_node,
+						    "cirrus,prince-devs", NULL);
+	if (prince_dev_cnt <= 0) {
+		dev_err(&pdev->dev,
+			"%s: Error reading prince devices from DT, cnt=%d\n",
+			__func__, prince_dev_cnt);
+		prince_max_devs = 0;
+		goto aux_dev_register;
+	}
+
+	if (prince_dev_cnt < prince_max_devs)
+		prince_max_devs = prince_dev_cnt;
+
+	prince_dev_info = devm_kcalloc(&pdev->dev, prince_dev_cnt,
+				       sizeof(struct aux_codec_dev_info),
+				       GFP_KERNEL);
+	if (!prince_dev_info) {
+		ret = -ENOMEM;
+		goto err;
+	}
+
+	for (i = 0; i < prince_dev_cnt; i++) {
+		aux_codec_of_node = of_parse_phandle(pdev->dev.of_node,
+						     "cirrus,prince-devs", i);
+		if (unlikely(!aux_codec_of_node)) {
+			dev_err(&pdev->dev,
+				"%s: prince dev node %d is not present\n",
+				__func__, i);
+			ret = -EINVAL;
+			goto err;
+		}
+		if (soc_find_component_locked(aux_codec_of_node, NULL)) {
+			prince_dev_info[prince_found].of_node =
+							aux_codec_of_node;
+			prince_dev_info[prince_found].index = i;
+			prince_found++;
+		}
+	}
+
+	if (prince_found < prince_dev_cnt) {
+		dev_dbg(&pdev->dev,
+			"%s: prince: failed to find %d components, found %d\n",
+			__func__, prince_dev_cnt, prince_found);
+		return -EPROBE_DEFER;
+	}
+	dev_info(&pdev->dev,
+		 "%s: found %d prince (CS35L41) codecs registered\n",
+		 __func__, prince_found);
+
 aux_dev_register:
-	card->num_aux_devs = wsa_max_devs + codec_aux_dev_cnt;
-	card->num_configs = wsa_max_devs + codec_aux_dev_cnt;
+	card->num_aux_devs = wsa_max_devs + codec_aux_dev_cnt + prince_max_devs;
+	card->num_configs = wsa_max_devs + codec_aux_dev_cnt + prince_max_devs;
 
 	/* Alloc array of AUX devs struct */
 	msm_aux_dev = devm_kcalloc(&pdev->dev, card->num_aux_devs,
@@ -8284,6 +8351,27 @@ aux_dev_register:
 						NULL;
 		msm_codec_conf[wsa_max_devs + i].of_node =
 				aux_cdc_dev_info[i].of_node;
+	}
+
+	for (i = 0; i < prince_max_devs; i++) {
+		int idx = wsa_max_devs + codec_aux_dev_cnt + i;
+		const char *prince_prefix = NULL;
+
+		if (of_property_read_string_index(pdev->dev.of_node,
+						  "cirrus,prince-dev-prefix",
+						  prince_dev_info[i].index,
+						  &prince_prefix))
+			prince_prefix = NULL;
+
+		msm_aux_dev[idx].name = NULL;
+		msm_aux_dev[idx].codec_name = NULL;
+		msm_aux_dev[idx].codec_of_node = prince_dev_info[i].of_node;
+		msm_aux_dev[idx].init = msm_aux_codec_init;
+		msm_codec_conf[idx].dev_name = NULL;
+		msm_codec_conf[idx].name_prefix = prince_prefix;
+		msm_codec_conf[idx].of_node = prince_dev_info[i].of_node;
+		dev_info(&pdev->dev, "%s: prince amp %d prefix = %s\n",
+			 __func__, i, prince_prefix ? prince_prefix : "(none)");
 	}
 
 	card->codec_conf = msm_codec_conf;
