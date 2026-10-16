@@ -7637,6 +7637,7 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	u32 auxpcm_audio_intf = 0;
 	u32 val = 0;
 	u32 wcn_btfm_intf = 0;
+	u32 wsa_max_devs = 0;
 	const struct of_device_id *match;
 
 	match = of_match_node(kona_asoc_machine_of_match, dev->of_node);
@@ -7649,16 +7650,32 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 	if (!strcmp(match->data, "codec")) {
 		card = &snd_soc_card_kona_msm;
 
+		/* msm_bolero_fe_dai_links[] 里唯一一条是 wsa_macro_vifeedback
+		 * 反馈通路（扬声器保护），它依赖 bolero-cdc/wsa-macro 驱动。
+		 * 本平台 DT 里 wsa-macro@3240000 节点没有 compatible（原厂
+		 * DTB 亦如此），且 qcom,wsa-max-devs = 0，wsa_macro 从不 probe，
+		 * 这条 codec DAI 永不注册 → snd_soc_register_card() 永远
+		 * -EPROBE_DEFER → 无任何声卡（/proc/asound/cards 为空）。
+		 * 因此仅在真正存在 WSA 设备时才挂这条链路。 */
+		of_property_read_u32(dev->of_node, "qcom,wsa-max-devs",
+				     &wsa_max_devs);
+
 		memcpy(msm_kona_dai_links + total_links,
 		       msm_common_dai_links,
 		       sizeof(msm_common_dai_links));
 		total_links += ARRAY_SIZE(msm_common_dai_links);
 
-		memcpy(msm_kona_dai_links + total_links,
-		       msm_bolero_fe_dai_links,
-		       sizeof(msm_bolero_fe_dai_links));
-		total_links +=
-			ARRAY_SIZE(msm_bolero_fe_dai_links);
+		if (wsa_max_devs > 0) {
+			memcpy(msm_kona_dai_links + total_links,
+			       msm_bolero_fe_dai_links,
+			       sizeof(msm_bolero_fe_dai_links));
+			total_links +=
+				ARRAY_SIZE(msm_bolero_fe_dai_links);
+		} else {
+			dev_info(dev,
+				 "%s: wsa-max-devs=0, skip wsa_macro vifeedback link\n",
+				 __func__);
+		}
 
 		memcpy(msm_kona_dai_links + total_links,
 		       msm_common_misc_fe_dai_links,
@@ -7670,11 +7687,18 @@ static struct snd_soc_card *populate_snd_card_dailinks(struct device *dev)
 		       sizeof(msm_common_be_dai_links));
 		total_links += ARRAY_SIZE(msm_common_be_dai_links);
 
-		memcpy(msm_kona_dai_links + total_links,
-		       msm_wsa_cdc_dma_be_dai_links,
-		       sizeof(msm_wsa_cdc_dma_be_dai_links));
-		total_links +=
-			ARRAY_SIZE(msm_wsa_cdc_dma_be_dai_links);
+		/* 同 msm_bolero_fe_dai_links：这 3 条 BE 链路的 codec DAI
+		 * 分别是 wsa_macro_rx1 / wsa_macro_rx_mix / wsa_macro_echo，
+		 * 全部由 bolero-cdc/wsa-macro 提供。该 macro 在本平台不 probe
+		 * （DT 无 compatible、wsa-max-devs=0），挂上去会让整张声卡
+		 * 永远 -EPROBE_DEFER。 */
+		if (wsa_max_devs > 0) {
+			memcpy(msm_kona_dai_links + total_links,
+			       msm_wsa_cdc_dma_be_dai_links,
+			       sizeof(msm_wsa_cdc_dma_be_dai_links));
+			total_links +=
+				ARRAY_SIZE(msm_wsa_cdc_dma_be_dai_links);
+		}
 
 		memcpy(msm_kona_dai_links + total_links,
 		       msm_rx_tx_cdc_dma_be_dai_links,

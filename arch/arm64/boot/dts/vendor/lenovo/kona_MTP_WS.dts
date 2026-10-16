@@ -7785,7 +7785,7 @@
 				qcom,cdc-vdd-buck-voltage = <0x1b7740 0x1b7740>;
 				qcom,cdc-vdd-buck-current = <0x9eb10>;
 				cdc-vdd-mic-bias-supply = <0xffffffff>;
-				qcom,cdc-vdd-mic-bias-voltage = "\02K\0\02K";
+				qcom,cdc-vdd-mic-bias-voltage = <0x00324b00 0x00324b00>;
 				qcom,cdc-vdd-mic-bias-current = <0x7530>;
 				qcom,cdc-micbias1-mv = <0x708>;
 				qcom,cdc-micbias2-mv = <0xa8c>;
