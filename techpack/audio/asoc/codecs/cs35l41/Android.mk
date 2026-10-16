@@ -31,16 +31,20 @@ DLKM_DIR := $(TOP)/device/qcom/common/dlkm
 # This is set once per LOCAL_PATH, not per (kernel) module
 KBUILD_OPTIONS := AUDIO_ROOT=$(AUDIO_BLD_DIR)
 
-KBUILD_OPTIONS += MODNAME=cs35l41_dlkm
+KBUILD_OPTIONS += MODNAME=audio_cirrus_cs35l41
 KBUILD_OPTIONS += BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
 KBUILD_OPTIONS += $(AUDIO_SELECT)
 
 ###########################################################
-# wm_adsp：提供 wm_adsp2_*/wm_halo_*/wm_adsp_read_ctl 等符号。
-# 必须先于 cs35l41 加载（设备端 init.target.rc 已按此顺序 insmod）。
+# 模块目标名与固件一致，直接由 Kbuild 产出（见 Kbuild 末尾注释）：
+#   audio_cirrus_wm_adsp.ko  提供 wm_adsp2_*/wm_halo_*/wm_adsp_read_ctl 等符号
+#   audio_cirrus_cs35l41.ko  CS35L41 本体，运行时依赖上面那个
+# 加载顺序（设备端 init.target.rc）也与此一致：先 wm_adsp 后 cs35l41。
+###########################################################
+# wm_adsp（符号提供者）
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(AUDIO_CHIPSET)_cirrus_wm_adsp.ko
-LOCAL_MODULE_KBUILD_NAME  := wm_adsp_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := audio_cirrus_wm_adsp.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)
@@ -49,7 +53,7 @@ include $(DLKM_DIR)/AndroidKernelModule.mk
 # CS35L41 本体（4 颗 I2C 智能功放）
 include $(CLEAR_VARS)
 LOCAL_MODULE              := $(AUDIO_CHIPSET)_cirrus_cs35l41.ko
-LOCAL_MODULE_KBUILD_NAME  := cs35l41_dlkm.ko
+LOCAL_MODULE_KBUILD_NAME  := audio_cirrus_cs35l41.ko
 LOCAL_MODULE_TAGS         := optional
 LOCAL_MODULE_DEBUG_ENABLE := true
 LOCAL_MODULE_PATH         := $(KERNEL_MODULES_OUT)

@@ -93,8 +93,15 @@ KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/soc/Module
 endif
 
 # Module information used by KBuild framework
-obj-$(CONFIG_SND_SOC_CS35L41) += wm_adsp_dlkm.o
-wm_adsp_dlkm-y := $(WM_ADSP_OBJS)
+#
+# 模块目标名直接写成固件里的文件名：Kbuild 产出的 .ko 会被内核的
+# INSTALL 步骤原样装进 $(KERNEL_MODULES_OUT)（= /vendor/lib/modules/），
+# 而设备端 init.target.rc 正是按这两个名字 insmod：
+#     insmod /vendor/lib/modules/audio_cirrus_wm_adsp.ko
+#     insmod /vendor/lib/modules/audio_cirrus_cs35l41.ko
+# （本机型并不对模块做重命名：设备上 wsa883x_dlkm.ko 也是原始名）
+obj-$(CONFIG_SND_SOC_CS35L41) += audio_cirrus_wm_adsp.o
+audio_cirrus_wm_adsp-y := $(WM_ADSP_OBJS)
 
-obj-$(CONFIG_SND_SOC_CS35L41) += cs35l41_dlkm.o
-cs35l41_dlkm-y := $(CS35L41_OBJS)
+obj-$(CONFIG_SND_SOC_CS35L41) += audio_cirrus_cs35l41.o
+audio_cirrus_cs35l41-y := $(CS35L41_OBJS)
