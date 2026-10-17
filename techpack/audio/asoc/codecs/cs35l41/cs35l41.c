@@ -595,17 +595,6 @@ static const struct snd_kcontrol_new cs35l41_aud_controls[] = {
 			  0x4CF, 0x391, dig_vol_tlv),
 	SOC_SINGLE_TLV("AMP PCM Gain", CS35L41_AMP_GAIN_CTRL, 5, 0x14, 0,
 		       amp_gain_tlv),
-	/*
-	 * "AMP Enable"：原厂驱动有这个控件，我们的没有，导致 mixer_paths.xml
-	 * speaker 路径里的 <ctl name="SPKn AMP Enable Switch" value="1" />
-	 * 全被 audio_route 静默跳过 —— 4 颗功放的使能从未打开，只有默认就通路
-	 * 的两颗出声。
-	 *
-	 * 原厂实现（audio_cirrus_cs35l41.ko 反汇编 cs35l41_gpi_glob_en_put）：
-	 * 把值写进 0x1303C（CS35L41_DSP_VIRT1_MBOX_8），即 Halo DSP 的
-	 * GPI 全局使能字；get 回调读缓存里的同一个值。
-	 */
-	SOC_SINGLE("AMP Enable", CS35L41_DSP_VIRT1_MBOX_8, 0, 1, 0),
 	SOC_SINGLE_RANGE("ASPTX1 Slot Position", CS35L41_SP_FRAME_TX_SLOT, 0, 0,
 			 7, 0),
 	SOC_SINGLE_RANGE("ASPTX2 Slot Position", CS35L41_SP_FRAME_TX_SLOT, 8, 0,
