@@ -70,6 +70,7 @@ struct cs35l41_private {
 	bool halo_booted;
 	bool bus_spi;
 	bool fast_switch_en;
+	bool amp_enable;
 	/* GPIO for /RST */
 	struct gpio_desc *reset_gpio;
 	//int reset_gpio;

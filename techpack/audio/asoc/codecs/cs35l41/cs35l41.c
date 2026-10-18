@@ -139,6 +139,12 @@ static int cs35l41_dsp_load_ev(struct snd_soc_dapm_widget *w,
 		if (cs35l41->halo_booted == false) {
 			wm_halo_event(w, kcontrol, event);
 			cs35l41->halo_booted = true;
+			/* mixer_paths 在 PCM 打开前就写了 AMP Enable Switch，
+			 * 那时 DSP 还没起来，put 只缓存没写寄存器，这里补写。 */
+			if (cs35l41->amp_enable)
+				regmap_write(cs35l41->regmap,
+					     CS35L41_DSP_VIRT1_MBOX_8,
+					     cs35l41->amp_enable);
 		}
 	default:
 		return 0;
@@ -590,11 +596,52 @@ static SOC_VALUE_ENUM_SINGLE_DECL(cs35l41_dsprx2_enum, CS35L41_DSP1_RX2_SRC, 0,
 static const struct snd_kcontrol_new dsp_rx2_mux =
 	SOC_DAPM_ENUM("DSPRX2 SRC", cs35l41_dsprx2_enum);
 
+/*
+ * "AMP Enable Switch"：原厂驱动有、我们的驱动一直没有，导致 mixer_paths.xml
+ * speaker 路径里的 "SPKn AMP Enable Switch" 被 audio_route 静默跳过 —— 4 颗
+ * 功放的 GPI 全局使能从未打开，只有默认就通路的两颗出声。
+ *
+ * 接口按原厂 audio_cirrus_cs35l41.ko 反汇编（cs35l41_gpi_glob_en_get/put）：
+ * 值缓存在私有结构里，Halo DSP 起来之后 regmap_write 到 0x1303C
+ * （CS35L41_DSP_VIRT1_MBOX_8），该寄存器是电平型状态，DSP 固件自己读。
+ */
+static int cs35l41_amp_enable_get(struct snd_kcontrol *kcontrol,
+				  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+		snd_soc_kcontrol_component(kcontrol);
+	struct cs35l41_private *cs35l41 =
+		snd_soc_component_get_drvdata(component);
+
+	ucontrol->value.integer.value[0] = cs35l41->amp_enable;
+
+	return 0;
+}
+
+static int cs35l41_amp_enable_put(struct snd_kcontrol *kcontrol,
+				  struct snd_ctl_elem_value *ucontrol)
+{
+	struct snd_soc_component *component =
+		snd_soc_kcontrol_component(kcontrol);
+	struct cs35l41_private *cs35l41 =
+		snd_soc_component_get_drvdata(component);
+
+	cs35l41->amp_enable = ucontrol->value.integer.value[0];
+
+	if (cs35l41->halo_booted)
+		regmap_write(cs35l41->regmap, CS35L41_DSP_VIRT1_MBOX_8,
+			     cs35l41->amp_enable);
+
+	return 0;
+}
+
 static const struct snd_kcontrol_new cs35l41_aud_controls[] = {
 	SOC_SINGLE_SX_TLV("Digital PCM Volume", CS35L41_AMP_DIG_VOL_CTRL, 3,
 			  0x4CF, 0x391, dig_vol_tlv),
 	SOC_SINGLE_TLV("AMP PCM Gain", CS35L41_AMP_GAIN_CTRL, 5, 0x14, 0,
 		       amp_gain_tlv),
+	SOC_SINGLE_EXT("AMP Enable Switch", SND_SOC_NOPM, 0, 1, 0,
+		       cs35l41_amp_enable_get, cs35l41_amp_enable_put),
 	SOC_SINGLE_RANGE("ASPTX1 Slot Position", CS35L41_SP_FRAME_TX_SLOT, 0, 0,
 			 7, 0),
 	SOC_SINGLE_RANGE("ASPTX2 Slot Position", CS35L41_SP_FRAME_TX_SLOT, 8, 0,
