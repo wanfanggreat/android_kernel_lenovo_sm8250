@@ -2419,6 +2419,19 @@ static int dsi_panel_parse_bl_config(struct dsi_panel *panel)
 	panel->bl_config.bl_inverted_dbv = utils->read_bool(utils->data,
 		"qcom,mdss-dsi-bl-inverted-dbv");
 
+	/*
+	 * rm69380 (EDO AMOLED) takes the DCS 0x51 payload in big-endian
+	 * (its init sequence uses "51 07 ff"), while the generic MIPI
+	 * helper sends little-endian.  The stock DT does not carry the
+	 * inverted-dbv flag, so the runtime DBV is byte-swapped and the
+	 * panel brightness becomes a sawtooth as the slider moves.
+	 */
+	if (strstr(panel->name, "rm69380"))
+		panel->bl_config.bl_inverted_dbv = true;
+
+	pr_info("[dsi_panel] %s: bl_inverted_dbv=%d\n", panel->name,
+		panel->bl_config.bl_inverted_dbv);
+
 	if (panel->bl_config.type == DSI_BACKLIGHT_PWM) {
 		rc = dsi_panel_parse_bl_pwm_config(panel);
 		if (rc) {
