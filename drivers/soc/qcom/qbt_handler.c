@@ -331,7 +331,8 @@ static long qbt_ioctl(
 	switch (cmd) {
 	case QBT_ENABLE_IPC:
 	{
-		if (!drvdata->fw_ipc.irq_enabled) {
+		if (drvdata->fw_ipc.irq >= 0 &&
+				!drvdata->fw_ipc.irq_enabled) {
 			enable_irq(drvdata->fw_ipc.irq);
 			drvdata->fw_ipc.irq_enabled = true;
 			pr_debug("%s: QBT_ENABLE_IPC\n", __func__);
@@ -340,7 +341,8 @@ static long qbt_ioctl(
 	}
 	case QBT_DISABLE_IPC:
 	{
-		if (drvdata->fw_ipc.irq_enabled) {
+		if (drvdata->fw_ipc.irq >= 0 &&
+				drvdata->fw_ipc.irq_enabled) {
 			disable_irq(drvdata->fw_ipc.irq);
 			drvdata->fw_ipc.irq_enabled = false;
 			pr_debug("%s: QBT_DISABLE_IPC\n", __func__);
@@ -1001,9 +1003,15 @@ static int qbt_read_device_tree(struct platform_device *pdev,
 	drvdata->fw_ipc.gpio = of_get_named_gpio(pdev->dev.of_node,
 		"qcom,ipc-gpio", 0);
 	if (drvdata->fw_ipc.gpio < 0) {
-		rc = drvdata->fw_ipc.gpio;
-		pr_err("ipc gpio not found, error=%d\n", rc);
-		goto end;
+		/*
+		 * The p11_pro_plus DT only wires the finger-detect line.
+		 * The stock kernel treats the IPC signal as optional, so
+		 * keep probing in order to create /dev/qbt_fd.
+		 */
+		pr_info("ipc gpio not present (%d), running without IPC\n",
+			drvdata->fw_ipc.gpio);
+		drvdata->fw_ipc.gpio = -1;
+		drvdata->fw_ipc.irq = -1;
 	}
 
 	gpio = of_get_named_gpio_flags(pdev->dev.of_node,
@@ -1071,11 +1079,13 @@ static int qbt_probe(struct platform_device *pdev)
 	drvdata->fd_gpio.irq_enabled = false;
 	disable_irq(drvdata->fd_gpio.irq);
 
-	rc = setup_ipc_irq(pdev, drvdata);
-	if (rc < 0)
-		goto end;
-	drvdata->fw_ipc.irq_enabled = false;
-	disable_irq(drvdata->fw_ipc.irq);
+	if (drvdata->fw_ipc.gpio >= 0) {
+		rc = setup_ipc_irq(pdev, drvdata);
+		if (rc < 0)
+			goto end;
+		drvdata->fw_ipc.irq_enabled = false;
+		disable_irq(drvdata->fw_ipc.irq);
+	}
 
 	rc = device_init_wakeup(&pdev->dev, 1);
 	if (rc < 0)
@@ -1133,7 +1143,8 @@ static int qbt_suspend(struct platform_device *pdev, pm_message_t state)
 		if (drvdata->is_wuhb_connected)
 			enable_irq_wake(drvdata->fd_gpio.irq);
 
-		enable_irq_wake(drvdata->fw_ipc.irq);
+		if (drvdata->fw_ipc.irq >= 0)
+			enable_irq_wake(drvdata->fw_ipc.irq);
 	}
 
 	mutex_unlock(&drvdata->mutex);
@@ -1148,7 +1159,8 @@ static int qbt_resume(struct platform_device *pdev)
 	if (drvdata->is_wuhb_connected)
 		disable_irq_wake(drvdata->fd_gpio.irq);
 
-	disable_irq_wake(drvdata->fw_ipc.irq);
+	if (drvdata->fw_ipc.irq >= 0)
+		disable_irq_wake(drvdata->fw_ipc.irq);
 
 	return 0;
 }
