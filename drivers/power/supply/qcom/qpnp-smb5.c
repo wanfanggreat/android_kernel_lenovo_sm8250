@@ -1754,6 +1754,20 @@ static int smb5_batt_get_prop(struct power_supply *psy,
 		break;
 	case POWER_SUPPLY_PROP_HEALTH:
 		rc = smblib_get_prop_batt_health(chg, val);
+		/*
+		 * The generic DT profile reads this pack's NTC about 21C
+		 * high, so the hardware BATIF status can latch TOO_HOT while
+		 * the calibrated pack temperature is normal. Follow the OEM
+		 * kernel and report the pack as healthy in that case.
+		 */
+		if (!rc && val->intval == POWER_SUPPLY_HEALTH_OVERHEAT) {
+			union power_supply_propval temp;
+
+			if (!smblib_get_prop_from_bms(chg,
+					POWER_SUPPLY_PROP_TEMP, &temp) &&
+					temp.intval < 450)
+				val->intval = POWER_SUPPLY_HEALTH_GOOD;
+		}
 		break;
 	case POWER_SUPPLY_PROP_PRESENT:
 		rc = smblib_get_prop_batt_present(chg, val);

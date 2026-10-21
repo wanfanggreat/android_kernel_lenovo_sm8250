@@ -22,6 +22,7 @@
 #include <drm/drm_crtc.h>
 #include <drm/drm_fixed.h>
 #include <drm/drm_panel.h>
+#include <linux/msm_drm_notify.h>
 #include <linux/debugfs.h>
 #include <linux/of_address.h>
 #include <linux/of_irq.h>
@@ -957,6 +958,37 @@ static void _sde_kms_drm_check_dpms(struct drm_atomic_state *old_state,
 			if (connector->panel)
 				drm_panel_notifier_call_chain(connector->panel,
 							event, &notifier_data);
+
+			/*
+			 * Legacy msm_drm notifier chain, still used by the
+			 * Goodix touch driver to switch the IC into wake
+			 * gesture mode.  Only forward full power transitions:
+			 * LP (AOD) must leave the touch IC running so that
+			 * SystemUI can detect the double tap itself.
+			 */
+			if (connector->connector_type ==
+					DRM_MODE_CONNECTOR_DSI) {
+				int legacy_blank = -1;
+
+				if (new_mode == DRM_PANEL_BLANK_POWERDOWN)
+					legacy_blank = MSM_DRM_BLANK_POWERDOWN;
+				else if (old_mode == DRM_PANEL_BLANK_POWERDOWN &&
+						old_conn_state->crtc)
+					legacy_blank = MSM_DRM_BLANK_UNBLANK;
+
+				if (legacy_blank >= 0) {
+					struct msm_drm_notifier legacy_data;
+
+					legacy_data.id = MSM_DRM_PRIMARY_DISPLAY;
+					legacy_data.data = &legacy_blank;
+					msm_drm_notifier_call_chain(
+						event ==
+						DRM_PANEL_EARLY_EVENT_BLANK ?
+						MSM_DRM_EARLY_EVENT_BLANK :
+						MSM_DRM_EVENT_BLANK,
+						&legacy_data);
+				}
+			}
 		}
 	}
 }

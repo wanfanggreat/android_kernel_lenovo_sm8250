@@ -25,6 +25,29 @@
 #define FG_GEN4_DEV_NAME	"qcom,fg-gen4"
 #define TTF_AWAKE_VOTER		"fg_ttf_awake"
 
+/*
+ * This tablet's pack is 8600mAh (factory calibration) while the DT profile
+ * shipped in this kernel is the generic 3588mAh one. The stock 4.19.157
+ * kernel reports the factory values; override the design capacity read to
+ * match it.
+ *
+ * force_otp_profile is kept as a debug switch only; the DT profile has to be
+ * loaded so that the thermistor and JEITA parameters are programmed.
+ */
+static int fg_force_otp_profile;
+module_param_named(force_otp_profile, fg_force_otp_profile, int, 0644);
+static int fg_otp_pull_up_kohms = 30;
+module_param_named(otp_pull_up_kohms, fg_otp_pull_up_kohms, int, 0644);
+static int fg_nom_cap_override_mah = 8600;
+module_param_named(nom_cap_override_mah, fg_nom_cap_override_mah, int, 0644);
+
+/*
+ * The generic DT profile reads the battery NTC about 21C too high on this
+ * hardware (the stock kernel applies the same correction). Units are
+ * deci-degrees Celsius.
+ */
+#define FG_BATT_TEMP_OFFSET_DECI	210
+
 #define PERPH_SUBTYPE_REG		0x05
 #define FG_BATT_SOC_PM8150B		0x10
 #define FG_BATT_INFO_PM8150B		0x11
@@ -702,6 +725,8 @@ static int fg_gen4_get_nominal_capacity(struct fg_gen4_chip *chip,
 	}
 
 	*nom_cap_uah = (int)(buf[0] | buf[1] << 8) * 1000;
+	if (fg_nom_cap_override_mah > 0)
+		*nom_cap_uah = (int64_t)fg_nom_cap_override_mah * 1000;
 	fg_dbg(fg, FG_CAP_LEARN, "nom_cap_uah: %lld\n", *nom_cap_uah);
 	return 0;
 }
@@ -819,6 +844,10 @@ static int fg_gen4_get_battery_temp(struct fg_dev *fg, int *val)
 	 * 0.25 C. Multiply by 10 to convert it to deci degrees C.
 	 */
 	*val = sign_extend32(buf, 9) * 100 / 40;
+
+	/* Match the OEM calibration applied by the stock 4.19.157 kernel. */
+	if (fg->profile_available)
+		*val -= FG_BATT_TEMP_OFFSET_DECI;
 
 	return 0;
 }
@@ -2040,6 +2069,13 @@ static int fg_gen4_get_batt_profile(struct fg_dev *fg)
 	if (rc < 0)
 		return rc;
 
+	/*
+	 * The generic profile targets a 4.4V pack. This tablet's pack is a
+	 * 4.2V one; the stock kernel caps the charger at 4.2V as well.
+	 * vbatt_full (the FG's internal full threshold) stays as provided.
+	 */
+	fg->bp.float_volt_uv = 4200000;
+
 	return 0;
 }
 
@@ -2501,6 +2537,64 @@ static void profile_load_work(struct work_struct *work)
 	rc = fg_gen4_get_batt_id(chip);
 	if (rc < 0) {
 		pr_err("Error in getting battery id, rc:%d\n", rc);
+		goto out;
+	}
+
+	/*
+	 * The DT profile shipped with this kernel (alium_..._3600mah) does not
+	 * match the pack used on this tablet.  Its thermistor coefficients and
+	 * NOM_CAP make the gauge report ~50C and 3588mAh, while the factory
+	 * calibration programmed in the PM8150B IMA/OTP reports ~32C and
+	 * 8600mAh.  Take the same "profile not found -> use OTP" path the
+	 * driver already has for unknown batteries, which is also what the
+	 * stock 4.19.157 kernel ends up using.
+	 */
+	if (fg_force_otp_profile) {
+		fg->profile_load_status = PROFILE_MISSING;
+		pr_info("FG: force_otp_profile set, using factory OTP profile\n");
+
+		switch (fg_otp_pull_up_kohms) {
+		case 30:
+			val = BATT_THERM_PULL_UP_30K;
+			break;
+		case 100:
+			val = BATT_THERM_PULL_UP_100K;
+			break;
+		case 400:
+			val = BATT_THERM_PULL_UP_400K;
+			break;
+		default:
+			val = 0xff;
+			break;
+		}
+		if (val != 0xff) {
+			rc = fg_masked_write(fg,
+					ADC_RR_BATT_THERM_BASE_CFG1(fg),
+					BATT_THERM_PULL_UP_MASK, val);
+			if (rc < 0)
+				pr_err("FG: failed to set therm pull-up rc=%d\n",
+					rc);
+			else
+				pr_info("FG: therm pull-up set to %d kOhm\n",
+					fg_otp_pull_up_kohms);
+		}
+
+		rc = fg_sram_read(fg, NOM_CAP_WORD, NOM_CAP_OFFSET,
+				buf, 2, FG_IMA_DEFAULT);
+		if (!rc)
+			pr_info("FG: IMA NOM_CAP=%d mAh\n",
+				buf[0] | buf[1] << 8);
+		else
+			pr_err("FG: failed to read IMA NOM_CAP rc=%d\n", rc);
+
+		rc = fg_sram_read(fg, BATT_TEMP_WORD, BATT_TEMP_OFFSET,
+				(u8 *)buf, 2, FG_IMA_DEFAULT);
+		if (!rc)
+			pr_info("FG: batt_id=%d, raw BATT_TEMP=0x%x (%d deci-C)\n",
+				fg->batt_id_ohms,
+				buf[0] | buf[1] << 8,
+				sign_extend32(buf[0] | buf[1] << 8, 9) * 100 / 40);
+
 		goto out;
 	}
 
