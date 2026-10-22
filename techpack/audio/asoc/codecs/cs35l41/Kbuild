@@ -1,0 +1,107 @@
+# SPDX-License-Identifier: GPL-2.0
+#
+# Cirrus Logic CS35L41 smart amplifier (I2C) — TB-J716F 扬声器功放
+#
+# 来源：LineageOS/android_kernel_xiaomi_sm8250 (lineage-21)
+#       techpack/audio/asoc/codecs/cs35l41/
+# 该驱动是 Qualcomm 4.19 techpack 定制版（Copyright 2018 Cirrus Logic），
+# 与原厂固件里的 audio_cirrus_cs35l41.ko 同一实现：
+#   - 依赖 wm_halo_init/event/early_event（Halo 版 wm_adsp，非本树全局的 ADSP2 版）
+#   - 依赖 wm_adsp_read_ctl/wm_adsp_write_ctl
+#   - 提供 "SPK1-4 AMP Enable Switch" / "AMP PCM Gain" / "PCM Source" 等控件
+# 因此本目录自带一份配套的 Halo 版 wm_adsp.c/h（与小米树做法一致）。
+# 本树全局的 CONFIG_SND_SOC_WM_ADSP 未启用，故不会产生符号冲突。
+
+# We can build either as part of a standalone Kernel build or as
+# an external module.  Determine which mechanism is being used
+ifeq ($(MODNAME),)
+	KERNEL_BUILD := 1
+else
+	KERNEL_BUILD := 0
+endif
+
+ifeq ($(KERNEL_BUILD), 1)
+	# These are configurable via Kconfig for kernel-based builds
+	# Need to explicitly configure for Android-based builds
+	AUDIO_BLD_DIR := $(shell pwd)/kernel/msm-4.19
+	AUDIO_ROOT := $(AUDIO_BLD_DIR)/techpack/audio
+endif
+
+ifeq ($(KERNEL_BUILD), 0)
+	ifeq ($(CONFIG_ARCH_KONA), y)
+		include $(AUDIO_ROOT)/config/konaauto.conf
+		INCS    +=  -include $(AUDIO_ROOT)/config/konaautoconf.h
+	endif
+endif
+
+############ UAPI ############
+UAPI_DIR :=	uapi
+UAPI_INC :=	-I$(AUDIO_ROOT)/include/$(UAPI_DIR)
+
+############ COMMON ############
+COMMON_DIR :=	include
+COMMON_INC :=	-I$(AUDIO_ROOT)/$(COMMON_DIR)
+
+############ CS35L41 ############
+
+# 与原厂固件保持同样的两模块拆分：
+#   audio_cirrus_wm_adsp.ko   —— 提供 wm_adsp2_*/wm_halo_*/wm_adsp_read_ctl 等符号
+#   audio_cirrus_cs35l41.ko   —— CS35L41 本体，运行时依赖上面那个
+# 设备端 init.target.rc 的加载顺序即为此：
+#   insmod audio_cirrus_wm_adsp.ko
+#   insmod audio_cirrus_cs35l41.ko
+ifdef CONFIG_SND_SOC_CS35L41
+	WM_ADSP_OBJS += wm_adsp.o
+
+	CS35L41_OBJS += cs35l41.o
+	CS35L41_OBJS += cs35l41-i2c.o
+	CS35L41_OBJS += cs35l41-tables.o
+endif
+
+LINUX_INC +=	-Iinclude/linux
+
+INCS +=		$(COMMON_INC) \
+		$(UAPI_INC)
+
+EXTRA_CFLAGS += $(INCS)
+
+CDEFINES +=	-DANI_LITTLE_BYTE_ENDIAN \
+		-DANI_LITTLE_BIT_ENDIAN \
+		-DDOT11F_LITTLE_ENDIAN_HOST \
+		-DANI_COMPILER_TYPE_GCC \
+		-DANI_OS_TYPE_ANDROID=6 \
+		-DPTT_SOCK_SVC_ENABLE \
+		-Wall\
+		-D__linux__
+
+KBUILD_CPPFLAGS += $(CDEFINES)
+
+ifeq ($(call cc-option-yn, -Wmaybe-uninitialized),y)
+EXTRA_CFLAGS += -Wmaybe-uninitialized
+endif
+
+ifeq ($(call cc-option-yn, -Wheader-guard),y)
+EXTRA_CFLAGS += -Wheader-guard
+endif
+
+ifeq ($(KERNEL_BUILD), 0)
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/ipc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/dsp/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/asoc/codecs/Module.symvers
+KBUILD_EXTRA_SYMBOLS +=$(OUT)/obj/vendor/qcom/opensource/audio-kernel/soc/Module.symvers
+endif
+
+# Module information used by KBuild framework
+#
+# 模块目标名直接写成固件里的文件名：Kbuild 产出的 .ko 会被内核的
+# INSTALL 步骤原样装进 $(KERNEL_MODULES_OUT)（= /vendor/lib/modules/），
+# 而设备端 init.target.rc 正是按这两个名字 insmod：
+#     insmod /vendor/lib/modules/audio_cirrus_wm_adsp.ko
+#     insmod /vendor/lib/modules/audio_cirrus_cs35l41.ko
+# （本机型并不对模块做重命名：设备上 wsa883x_dlkm.ko 也是原始名）
+obj-$(CONFIG_SND_SOC_CS35L41) += audio_cirrus_wm_adsp.o
+audio_cirrus_wm_adsp-y := $(WM_ADSP_OBJS)
+
+obj-$(CONFIG_SND_SOC_CS35L41) += audio_cirrus_cs35l41.o
+audio_cirrus_cs35l41-y := $(CS35L41_OBJS)
