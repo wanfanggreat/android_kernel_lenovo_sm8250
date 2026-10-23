@@ -760,6 +760,7 @@ KBUILD_CFLAGS += -Wno-asm-operand-widths
 KBUILD_CFLAGS += -Wno-initializer-overrides
 KBUILD_CFLAGS += $(call cc-option, -Wno-default-const-init-var-unsafe)
 KBUILD_CFLAGS += $(call cc-option, -Wno-default-const-init-field-unsafe)
+KBUILD_CFLAGS += $(call cc-option, -Wno-implicit-enum-enum-cast)
 KBUILD_CFLAGS += $(call cc-option, -Wno-undefined-optimized)
 KBUILD_CFLAGS += $(call cc-option, -Wno-tautological-constant-out-of-range-compare)
 KBUILD_CFLAGS += $(call cc-option, -mllvm -disable-struct-const-merge)
