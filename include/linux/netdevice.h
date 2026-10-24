@@ -1442,8 +1442,8 @@ struct net_device_ops {
 						struct xdp_frame **xdp,
 						u32 flags);
 	int			(*ndo_xsk_async_xmit)(struct net_device *dev,
-	struct net_device *	(*ndo_get_peer_dev)(struct net_device *dev);
 						      u32 queue_id);
+	struct net_device *	(*ndo_get_peer_dev)(struct net_device *dev);
 
 	ANDROID_KABI_RESERVE(1);
 	ANDROID_KABI_RESERVE(2);
