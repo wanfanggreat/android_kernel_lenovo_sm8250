@@ -3,7 +3,6 @@
 #define __LINUX_COMPILER_H
 
 #include <linux/compiler_types.h>
-#include <linux/compiler_attributes.h>
 
 #ifndef __ASSEMBLY__
 
@@ -429,3 +428,8 @@ static inline void *offset_to_ptr(const int *off)
 #define prevent_tail_call_optimization()	mb()
 
 #endif /* __LINUX_COMPILER_H */
+
+/* p11 K1 port: 5.x pseudo-keyword used by ported BPF code */
+#ifndef fallthrough
+#define fallthrough do { } while (0)  /* fall through */
+#endif
