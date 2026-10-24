@@ -7684,24 +7684,26 @@ bool bpf_sock_is_valid_access(int off, int size, enum bpf_access_type type,
 	case offsetof(struct bpf_sock, state):
 	case offsetof(struct bpf_sock, family):
 	case offsetof(struct bpf_sock, type):
-		*insn++ = BPF_LDX_MEM(BPF_W, si->dst_reg, si->src_reg,
-				      offsetof(struct sock, __sk_flags_offset));
-		*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, SK_FL_TYPE_MASK);
-		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg, SK_FL_TYPE_SHIFT);
-		break;
-	case BPF_H:
-		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_16_no_cache);
-		break;
-	case BPF_W:
-		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_32_no_cache);
-		break;
+	case offsetof(struct bpf_sock, protocol):
+	case offsetof(struct bpf_sock, src_port):
+	case offsetof(struct bpf_sock, rx_queue_mapping):
+	case bpf_ctx_range(struct bpf_sock, src_ip4):
+	case bpf_ctx_range_till(struct bpf_sock, src_ip6[0], src_ip6[3]):
+	case bpf_ctx_range(struct bpf_sock, dst_ip4):
+	case bpf_ctx_range_till(struct bpf_sock, dst_ip6[0], dst_ip6[3]):
+		bpf_ctx_record_field_size(info, size_default);
+		return bpf_ctx_narrow_access_ok(off, size, size_default);
+	case bpf_ctx_range(struct bpf_sock, dst_port):
+		field_size = size == size_default ?
+			size_default : sizeof_field(struct bpf_sock, dst_port);
+		bpf_ctx_record_field_size(info, field_size);
+		return bpf_ctx_narrow_access_ok(off, size, field_size);
+	case offsetofend(struct bpf_sock, dst_port) ...
+	     offsetof(struct bpf_sock, dst_ip4) - 1:
+		return false;
 	}
 
-	*insn++ = BPF_JMP_IMM(BPF_JSGE, BPF_REG_0, 0, 2);
-	*insn++ = BPF_ALU32_REG(BPF_XOR, BPF_REG_0, BPF_REG_0);
-	*insn++ = BPF_EXIT_INSN();
-
-	return insn - insn_buf;
+	return size == size_default;
 }
 
 static int tc_cls_act_prologue(struct bpf_insn *insn_buf, bool direct_write,
@@ -8574,20 +8576,21 @@ u32 bpf_sock_convert_ctx_access(enum bpf_access_type type,
 		break;
 
 	case offsetof(struct bpf_sock, type):
-		BUILD_BUG_ON(sizeof_field(struct sock, __sk_common.skc_type) != 2);
-		*insn++ = BPF_LDX_MEM(
-			BPF_FIELD_SIZEOF(struct sock, __sk_common.skc_type),
-			si->dst_reg, si->src_reg,
-			bpf_target_off(struct sock, __sk_common.skc_type,
-				       sizeof_field(struct sock, __sk_common.skc_type),
-				       target_size));
+		/* p11 K1: 4.19 sk_type is a bitfield at __sk_flags_offset */
+		*insn++ = BPF_LDX_MEM(BPF_W, si->dst_reg, si->src_reg,
+				      offsetof(struct sock, __sk_flags_offset));
+		*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, SK_FL_TYPE_MASK);
+		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg, SK_FL_TYPE_SHIFT);
+		*target_size = sizeof(__u16);
 		break;
 
 	case offsetof(struct bpf_sock, protocol):
+		/* p11 K1: 4.19 sk_protocol is a bitfield at __sk_flags_offset */
 		*insn++ = BPF_LDX_MEM(BPF_W, si->dst_reg, si->src_reg,
 				      offsetof(struct sock, __sk_flags_offset));
 		*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, SK_FL_PROTO_MASK);
 		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg, SK_FL_PROTO_SHIFT);
+		*target_size = sizeof(__u8);
 		break;
 
 	case offsetof(struct bpf_sock, src_ip4):
