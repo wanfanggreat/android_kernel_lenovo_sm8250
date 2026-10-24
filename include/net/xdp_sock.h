@@ -97,6 +97,9 @@ static inline bool xsk_is_setup_for_bpf_map(struct xdp_sock *xs)
 {
 	return false;
 }
+int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp);
+void __xsk_map_flush(void);
+
 #endif /* CONFIG_XDP_SOCKETS */
 
 #endif /* _LINUX_XDP_SOCK_H */

@@ -97,7 +97,8 @@ static struct neighbour *ip_neigh_gw6(struct net_device *dev,
 {
 	struct neighbour *neigh;
 
-	neigh = __ipv6_neigh_lookup_noref_stub(dev, addr);
+	neigh = ___neigh_lookup_noref(ipv6_stub->nd_tbl, neigh_key_eq128,
+				      ndisc_hashfn, addr, dev);
 	if (unlikely(!neigh))
 		neigh = __neigh_create(ipv6_stub->nd_tbl, addr, dev, false);
 
@@ -2275,7 +2276,7 @@ static int bpf_out_neigh_v6(struct net *net, struct sk_buff *skb,
 
 		sock_confirm_neigh(skb, neigh);
 		dev_xmit_recursion_inc();
-		ret = neigh_output(neigh, skb, false);
+		ret = neigh_output(neigh, skb);
 		dev_xmit_recursion_dec();
 		rcu_read_unlock_bh();
 		return ret;
