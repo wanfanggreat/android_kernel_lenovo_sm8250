@@ -6518,7 +6518,7 @@ BPF_CALL_5(bpf_tcp_gen_syncookie, struct sock *, sk, void *, iph, u32, iph_len,
 		if (sk->sk_family != AF_INET6)
 			return -EINVAL;
 
-		mss = tcp_v6_get_syncookie(sk, iph, th, &cookie);
+		mss = 0;  /* p11 K1: 4.19 has no tcp_v6_get_syncookie */
 		break;
 #endif /* CONFIG_IPV6 */
 
@@ -8901,13 +8901,20 @@ static u32 sock_addr_convert_ctx_access(enum bpf_access_type type,
 		break;
 
 	case offsetof(struct bpf_sock_addr, type):
-		SOCK_ADDR_LOAD_NESTED_FIELD(struct bpf_sock_addr_kern,
-					    struct sock, sk, sk_type);
+		SOCK_ADDR_LOAD_NESTED_FIELD_SIZE_OFF(
+			struct bpf_sock_addr_kern, struct sock, sk,
+			__sk_flags_offset, BPF_W, 0);
+		*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, SK_FL_TYPE_MASK);
+		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg, SK_FL_TYPE_SHIFT);
 		break;
 
 	case offsetof(struct bpf_sock_addr, protocol):
-		SOCK_ADDR_LOAD_NESTED_FIELD(struct bpf_sock_addr_kern,
-					    struct sock, sk, sk_protocol);
+		SOCK_ADDR_LOAD_NESTED_FIELD_SIZE_OFF(
+			struct bpf_sock_addr_kern, struct sock, sk,
+			__sk_flags_offset, BPF_W, 0);
+		*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, SK_FL_PROTO_MASK);
+		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg,
+					SK_FL_PROTO_SHIFT);
 		break;
 
 	case offsetof(struct bpf_sock_addr, msg_src_ip4):

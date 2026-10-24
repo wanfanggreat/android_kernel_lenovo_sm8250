@@ -12,6 +12,12 @@
 #include <trace/hooks/memory.h>
 #include <linux/module.h>
 
+/* p11 K1: ksymbol perf records need 5.x perf core; stub the emitter */
+#define PERF_RECORD_KSYMBOL_TYPE_BPF 2
+static inline void perf_event_ksymbol(u8 ksym_type, unsigned long addr,
+				      unsigned long size, bool unregister,
+				      const char *sym) { }
+
 /* dummy _ops. The verifier will operate on target program's ops. */
 const struct bpf_verifier_ops bpf_extension_verifier_ops = {
 };
