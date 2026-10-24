@@ -2264,4 +2264,7 @@ static inline void tcp_skb_bpf_redirect_clear(struct sk_buff *skb)
 	TCP_SKB_CB(skb)->bpf.sk_redir = NULL;
 }
 
+#define TCP_CONG_MASK	(TCP_CONG_NON_RESTRICTED | TCP_CONG_NEEDS_ECN)
+struct tcp_congestion_ops *tcp_ca_find(const char *name);
+
 #endif	/* _TCP_H */
