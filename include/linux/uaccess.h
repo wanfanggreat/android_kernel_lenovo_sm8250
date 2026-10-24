@@ -355,6 +355,15 @@ extern long notrace __probe_user_write(void __user *dst, const void *src, size_t
 extern long strncpy_from_unsafe(char *dst, const void *unsafe_addr, long count);
 extern long strncpy_from_unsafe_user(char *dst, const void __user *unsafe_addr,
 				     long count);
+
+static __always_inline long strncpy_from_user_nofault(char *dst, const void __user *unsafe_src, size_t count)
+{
+	return strncpy_from_unsafe_user(dst, unsafe_src, count);
+}
+static __always_inline long strncpy_from_kernel_nofault(char *dst, const void *unsafe_src, size_t count)
+{
+	return strncpy_from_unsafe(dst, unsafe_src, count);
+}
 extern long strnlen_unsafe_user(const void __user *unsafe_addr, long count);
 
 /**
