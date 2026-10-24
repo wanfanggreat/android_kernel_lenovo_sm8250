@@ -1786,6 +1786,8 @@ enum netdev_priv_flags {
  *	moves out.
  */
 
+struct xdp_dev_bulk_queue;
+
 struct net_device {
 	char			name[IFNAMSIZ];
 	struct hlist_node	name_hlist;
@@ -1812,6 +1814,7 @@ struct net_device {
 	struct list_head	unreg_list;
 	struct list_head	close_list;
 	struct list_head	ptype_all;
+	struct xdp_dev_bulk_queue __percpu *xdp_bulkq;
 	struct list_head	ptype_specific;
 
 	struct {
@@ -3692,6 +3695,7 @@ int xdp_umem_query(struct net_device *dev, u16 queue_id);
 
 int __dev_forward_skb(struct net_device *dev, struct sk_buff *skb);
 int dev_forward_skb(struct net_device *dev, struct sk_buff *skb);
+int dev_forward_skb_nomtu(struct net_device *dev, struct sk_buff *skb);
 bool is_skb_forwardable(const struct net_device *dev,
 			const struct sk_buff *skb);
 

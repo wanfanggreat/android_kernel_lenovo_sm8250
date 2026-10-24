@@ -1948,6 +1948,12 @@ int dev_forward_skb(struct net_device *dev, struct sk_buff *skb)
 }
 EXPORT_SYMBOL_GPL(dev_forward_skb);
 
+int dev_forward_skb_nomtu(struct net_device *dev, struct sk_buff *skb)
+{
+	return ____dev_forward_skb(dev, skb, false) ?: netif_rx_internal(skb);
+}
+EXPORT_SYMBOL_GPL(dev_forward_skb_nomtu);
+
 static inline int deliver_skb(struct sk_buff *skb,
 			      struct packet_type *pt_prev,
 			      struct net_device *orig_dev)

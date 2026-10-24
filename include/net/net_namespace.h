@@ -108,6 +108,8 @@ struct net {
 
 	/* Used to store attached BPF programs */
 	struct netns_bpf	bpf;
+
+	atomic64_t		net_cookie; /* written once */
 	struct netns_packet	packet;
 	struct netns_unix	unx;
 	struct netns_ipv4	ipv4;

@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <net/sock.h>
 #include <linux/kernel.h>
+#include <linux/cookie.h>
 #include <linux/tcp.h>
 #include <linux/workqueue.h>
 #include <linux/nospec.h>
@@ -19,6 +20,21 @@ static const struct sock_diag_handler *sock_diag_handlers[AF_MAX];
 static int (*inet_rcv_compat)(struct sk_buff *skb, struct nlmsghdr *nlh);
 static DEFINE_MUTEX(sock_diag_table_mutex);
 static struct workqueue_struct *broadcast_wq;
+
+DEFINE_COOKIE(sock_cookie);
+
+u64 __sock_gen_cookie(struct sock *sk)
+{
+	u64 res;
+
+	while (1) {
+		res = atomic64_read(&sk->sk_cookie);
+		if (res)
+			return res;
+		res = gen_cookie_next(&sock_cookie);
+		atomic64_cmpxchg(&sk->sk_cookie, 0, res);
+	}
+}
 
 u64 sock_gen_cookie(struct sock *sk)
 {
