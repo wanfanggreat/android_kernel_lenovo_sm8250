@@ -337,11 +337,16 @@ static u32 convert_skb_access(int skb_field, int dst_reg, int src_reg,
 				      offsetof(struct sk_buff, vlan_tci));
 		break;
 	case SKF_AD_VLAN_TAG_PRESENT:
-		*insn++ = BPF_LDX_MEM(BPF_B, dst_reg, src_reg, PKT_VLAN_PRESENT_OFFSET());
-		if (PKT_VLAN_PRESENT_BIT)
-			*insn++ = BPF_ALU32_IMM(BPF_RSH, dst_reg, PKT_VLAN_PRESENT_BIT);
-		if (PKT_VLAN_PRESENT_BIT < 7)
-			*insn++ = BPF_ALU32_IMM(BPF_AND, dst_reg, 1);
+		/* p11 K1: 4.19 sk_buff keeps vlan_tci; VLAN_TAG_PRESENT is a
+		 * bit inside it rather than a dedicated bitfield. */
+		*insn++ = BPF_LDX_MEM(BPF_H, dst_reg, src_reg,
+				      offsetof(struct sk_buff, vlan_tci));
+		if (skb_field == SKF_AD_VLAN_TAG) {
+			*insn++ = BPF_ALU32_IMM(BPF_AND, dst_reg,
+						~VLAN_TAG_PRESENT);
+		} else {
+			*insn++ = BPF_ALU32_IMM(BPF_RSH, dst_reg, 12);
+		}
 		break;
 	}
 

@@ -938,16 +938,18 @@ struct bpf_map *__bpf_map_get(struct fd f)
 	return f.file->private_data;
 }
 
-void bpf_map_inc(struct bpf_map *map)
+struct bpf_map *bpf_map_inc(struct bpf_map *map)
 {
 	atomic64_inc(&map->refcnt);
+	return map;
 }
 EXPORT_SYMBOL_GPL(bpf_map_inc);
 
-void bpf_map_inc_with_uref(struct bpf_map *map)
+struct bpf_map *bpf_map_inc_with_uref(struct bpf_map *map)
 {
 	atomic64_inc(&map->refcnt);
 	atomic64_inc(&map->usercnt);
+	return map;
 }
 EXPORT_SYMBOL_GPL(bpf_map_inc_with_uref);
 
