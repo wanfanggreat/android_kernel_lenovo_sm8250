@@ -20,7 +20,7 @@ static DEFINE_SPINLOCK(tcp_cong_list_lock);
 static LIST_HEAD(tcp_cong_list);
 
 /* Simple linear search, don't expect many entries! */
-static struct tcp_congestion_ops *tcp_ca_find(const char *name)
+struct tcp_congestion_ops *tcp_ca_find(const char *name)
 {
 	struct tcp_congestion_ops *e;
 
@@ -31,6 +31,7 @@ static struct tcp_congestion_ops *tcp_ca_find(const char *name)
 
 	return NULL;
 }
+EXPORT_SYMBOL_GPL(tcp_ca_find);
 
 /* Must be called with rcu lock held */
 static struct tcp_congestion_ops *tcp_ca_find_autoload(struct net *net,
