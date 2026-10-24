@@ -1895,7 +1895,6 @@ static inline int security_perf_event_write(struct perf_event *event)
 #endif /* CONFIG_SECURITY */
 #endif /* CONFIG_PERF_EVENTS */
 
-#endif /* ! __LINUX_SECURITY_H */
 
 /* p11 K1 port from 5.x lockdown */
 enum lockdown_reason {
@@ -1906,3 +1905,5 @@ enum lockdown_reason {
 	LOCKDOWN_CONFIDENTIALITY_MAX,
 };
 int security_locked_down(enum lockdown_reason what);
+
+#endif /* ! __LINUX_SECURITY_H */
