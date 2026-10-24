@@ -10,6 +10,13 @@
 #include <net/inet_common.h>
 #include <net/tls.h>
 
+/* p11 K1: 4.19 has no TLS TX offload ctx / MSG_SENDPAGE_NOPOLICY */
+static inline bool tls_sw_has_ctx_tx(const struct sock *sk)
+{
+	return false;
+}
+#define MSG_SENDPAGE_NOPOLICY 0
+
 int __tcp_bpf_recvmsg(struct sock *sk, struct sk_psock *psock,
 		      struct msghdr *msg, int len, int flags)
 {
