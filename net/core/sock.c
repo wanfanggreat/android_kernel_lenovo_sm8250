@@ -1843,6 +1843,19 @@ void sock_wfree(struct sk_buff *skb)
 	if (refcount_sub_and_test(len, &sk->sk_wmem_alloc))
 		__sk_free(sk);
 }
+
+void sock_pfree(struct sk_buff *skb)
+{
+	struct sock *sk = skb->sk;
+
+	if (!sk_fullsock(sk))
+		return;
+
+	skb_orphan(skb);
+	sock_gen_cookie(sk);
+	sock_put(sk);
+}
+EXPORT_SYMBOL(sock_pfree);
 EXPORT_SYMBOL(sock_wfree);
 
 /* This variant of sock_wfree() is used by TCP,

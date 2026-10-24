@@ -5075,14 +5075,14 @@ static int bpf_fib_set_fwd_params(struct bpf_fib_lookup *params,
 static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 			       u32 flags, bool check_mtu)
 {
-	struct fib_nh_common *nhc;
 	struct in_device *in_dev;
 	struct neighbour *neigh;
 	struct net_device *dev;
 	struct fib_result res;
+	struct fib_nh *nh;
 	struct flowi4 fl4;
-	u32 mtu = 0;
 	int err;
+	u32 mtu;
 
 	dev = dev_get_by_index_rcu(net, params->ifindex);
 	if (unlikely(!dev))
@@ -5109,7 +5109,6 @@ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 	fl4.saddr = params->ipv4_src;
 	fl4.fl4_sport = params->sport;
 	fl4.fl4_dport = params->dport;
-	fl4.flowi4_multipath_hash = 0;
 
 	if (flags & BPF_FIB_LOOKUP_DIRECT) {
 		u32 tbid = l3mdev_fib_table_rcu(dev) ? : RT_TABLE_MAIN;
@@ -5144,24 +5143,24 @@ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 	if (res.type != RTN_UNICAST)
 		return BPF_FIB_LKUP_RET_NOT_FWDED;
 
-	if (fib_info_num_path(res.fi) > 1)
+	if (res.fi->fib_nhs > 1)
 		fib_select_path(net, &res, &fl4, NULL);
 
 	if (check_mtu) {
 		mtu = ip_mtu_from_fib_result(&res, params->ipv4_dst);
-		if (params->tot_len > mtu) {
-			params->mtu_result = mtu; /* union with tot_len */
+		if (params->tot_len > mtu)
 			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
-		}
 	}
 
-	nhc = res.nhc;
+	nh = &res.fi->fib_nh[res.nh_sel];
 
 	/* do not handle lwt encaps right now */
-	if (nhc->nhc_lwtstate)
+	if (nh->nh_lwtstate)
 		return BPF_FIB_LKUP_RET_UNSUPP_LWT;
 
-	dev = nhc->nhc_dev;
+	dev = nh->nh_dev;
+	if (nh->nh_gw)
+		params->ipv4_dst = nh->nh_gw;
 
 	params->rt_metric = res.fi->fib_priority;
 	params->ifindex = dev->ifindex;
@@ -5169,24 +5168,11 @@ static int bpf_ipv4_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 	/* xdp and cls_bpf programs are run in RCU-bh so
 	 * rcu_read_lock_bh is not needed here
 	 */
-	if (likely(nhc->nhc_gw_family != AF_INET6)) {
-		if (nhc->nhc_gw_family)
-			params->ipv4_dst = nhc->nhc_gw.ipv4;
-
-		neigh = __ipv4_neigh_lookup_noref(dev,
-						 (__force u32)params->ipv4_dst);
-	} else {
-		struct in6_addr *dst = (struct in6_addr *)params->ipv6_dst;
-
-		params->family = AF_INET6;
-		*dst = nhc->nhc_gw.ipv6;
-		neigh = __ipv6_neigh_lookup_noref_stub(dev, dst);
-	}
-
-	if (!neigh || !(neigh->nud_state & NUD_VALID))
+	neigh = __ipv4_neigh_lookup_noref(dev, (__force u32)params->ipv4_dst);
+	if (!neigh)
 		return BPF_FIB_LKUP_RET_NO_NEIGH;
 
-	return bpf_fib_set_fwd_params(params, neigh, dev, mtu);
+	return bpf_fib_set_fwd_params(params, neigh, dev);
 }
 #endif
 
