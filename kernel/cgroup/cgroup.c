@@ -6468,7 +6468,6 @@ int cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 	return ret;
 }
 int cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
-		      struct bpf_cgroup_link *link,
 		      enum bpf_attach_type type)
 {
 	int ret;

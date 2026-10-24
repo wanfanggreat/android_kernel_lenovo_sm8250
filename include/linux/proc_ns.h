@@ -87,3 +87,6 @@ extern int ns_get_name(char *buf, size_t size, struct task_struct *task,
 extern void nsfs_init(void);
 
 #endif /* _LINUX_PROC_NS_H */
+
+/* p11 K1 port from 5.x */
+extern bool ns_match(const struct ns_common *ns, dev_t dev, ino_t ino);

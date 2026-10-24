@@ -769,7 +769,7 @@ struct file *fget_task(struct task_struct *task, unsigned int fd)
 
 	task_lock(task);
 	if (task->files)
-		file = __fget_files_rcu(task->files, fd, 0, NULL);
+		file = __fget_files_rcu(task->files, fd, 0, 0);
 	task_unlock(task);
 
 	return file;
