@@ -2245,7 +2245,7 @@ static int bpf_event_notify(struct notifier_block *nb, unsigned long op,
 			    void *module)
 {
 	struct bpf_trace_module *btm, *tmp;
-	struct module *mod = module;
+	struct module __maybe_unused *mod = module;
 	int ret = 0;
 
 	if (0 /* p11 K1: no module bpf raw events */ == 0 ||
