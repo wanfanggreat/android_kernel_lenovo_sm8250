@@ -12,3 +12,5 @@ void sha_init(__u32 *buf);
 void sha_transform(__u32 *digest, const char *data, __u32 *W);
 
 #endif
+
+#define SHA1_BLOCK_SIZE 64

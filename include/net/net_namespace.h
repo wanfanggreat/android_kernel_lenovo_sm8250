@@ -15,6 +15,7 @@
 #include <net/flow.h>
 #include <net/netns/core.h>
 #include <net/netns/mib.h>
+#include <net/netns/bpf.h>
 #include <net/netns/unix.h>
 #include <net/netns/packet.h>
 #include <net/netns/ipv4.h>
@@ -104,6 +105,9 @@ struct net {
 	struct net_device       *loopback_dev;          /* The loopback */
 	struct netns_core	core;
 	struct netns_mib	mib;
+
+	/* Used to store attached BPF programs */
+	struct netns_bpf	bpf;
 	struct netns_packet	packet;
 	struct netns_unix	unx;
 	struct netns_ipv4	ipv4;
