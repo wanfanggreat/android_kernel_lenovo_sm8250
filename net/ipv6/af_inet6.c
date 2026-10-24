@@ -944,9 +944,25 @@ static const struct ipv6_stub ipv6_stub_impl = {
 	.nd_tbl	= &nd_tbl,
 };
 
+static int p11_inet6_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
+			  u32 flags)
+{
+	return __inet6_bind(sk, uaddr, addr_len,
+			    flags & BIND_FORCE_ADDRESS_NO_PORT, true);
+}
+
+static struct sock *p11_udp6_lib_lookup(struct net *net,
+		const struct in6_addr *saddr, __be16 sport,
+		const struct in6_addr *daddr, __be16 dport,
+		int dif, int sdif, struct udp_table *tbl)
+{
+	return __udp6_lib_lookup(net, saddr, sport, daddr, dport,
+				 dif, sdif, tbl, NULL);
+}
+
 static const struct ipv6_bpf_stub ipv6_bpf_stub_impl = {
-	.inet6_bind = __inet6_bind,
-	.udp6_lib_lookup = __udp6_lib_lookup,
+	.inet6_bind = p11_inet6_bind,
+	.udp6_lib_lookup = p11_udp6_lib_lookup,
 };
 
 static int __init inet6_init(void)
