@@ -7706,6 +7706,98 @@ bool bpf_sock_is_valid_access(int off, int size, enum bpf_access_type type,
 	return size == size_default;
 }
 
+static bool sock_filter_is_valid_access(int off, int size,
+					enum bpf_access_type type,
+					const struct bpf_prog *prog,
+					struct bpf_insn_access_aux *info)
+{
+	if (off < 0 || off >= sizeof(struct bpf_sock))
+		return false;
+	if (off % size != 0)
+		return false;
+	if (!__sock_filter_check_attach_type(off, type,
+					     prog->expected_attach_type))
+		return false;
+	if (!__sock_filter_check_size(off, size, info))
+		return false;
+	return true;
+}
+
+static int bpf_unclone_prologue(struct bpf_insn *insn_buf, bool direct_write,
+				const struct bpf_prog *prog, int drop_verdict)
+{
+	struct bpf_insn *insn = insn_buf;
+
+	if (!direct_write)
+		return 0;
+
+	/* if (!skb->cloned)
+	 *       goto start;
+	 *
+	 * (Fast-path, otherwise approximation that we might be
+	 *  a clone, do the rest in helper.)
+	 */
+	*insn++ = BPF_LDX_MEM(BPF_B, BPF_REG_6, BPF_REG_1, CLONED_OFFSET());
+	*insn++ = BPF_ALU32_IMM(BPF_AND, BPF_REG_6, CLONED_MASK);
+	*insn++ = BPF_JMP_IMM(BPF_JEQ, BPF_REG_6, 0, 7);
+
+	/* ret = bpf_skb_pull_data(skb, 0); */
+	*insn++ = BPF_MOV64_REG(BPF_REG_6, BPF_REG_1);
+	*insn++ = BPF_ALU64_REG(BPF_XOR, BPF_REG_2, BPF_REG_2);
+	*insn++ = BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 0, 0,
+			       BPF_FUNC_skb_pull_data);
+	/* if (!ret)
+	 *      goto restore;
+	 * return TC_ACT_SHOT;
+	 */
+	*insn++ = BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 2);
+	*insn++ = BPF_ALU32_IMM(BPF_MOV, BPF_REG_0, drop_verdict);
+	*insn++ = BPF_EXIT_INSN();
+
+	/* restore: */
+	*insn++ = BPF_MOV64_REG(BPF_REG_1, BPF_REG_6);
+	/* start: */
+	*insn++ = prog->insnsi[0];
+
+	return insn - insn_buf;
+}
+
+static int bpf_gen_ld_abs(const struct bpf_insn *orig,
+			  struct bpf_insn *insn_buf)
+{
+	bool indirect = BPF_MODE(orig->code) == BPF_IND;
+	struct bpf_insn *insn = insn_buf;
+
+	if (!indirect) {
+		*insn++ = BPF_MOV64_IMM(BPF_REG_2, orig->imm);
+	} else {
+		*insn++ = BPF_MOV64_REG(BPF_REG_2, orig->src_reg);
+		if (orig->imm)
+			*insn++ = BPF_ALU64_IMM(BPF_ADD, BPF_REG_2, orig->imm);
+	}
+	/* We're guaranteed here that CTX is in R6. */
+	*insn++ = BPF_MOV64_REG(BPF_REG_1, BPF_REG_CTX);
+
+	switch (BPF_SIZE(orig->code)) {
+	case BPF_B:
+		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_8_no_cache);
+		break;
+	case BPF_H:
+		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_16_no_cache);
+		break;
+	case BPF_W:
+		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_32_no_cache);
+		break;
+	}
+
+	*insn++ = BPF_JMP_IMM(BPF_JSGE, BPF_REG_0, 0, 2);
+	*insn++ = BPF_ALU32_REG(BPF_XOR, BPF_REG_0, BPF_REG_0);
+	*insn++ = BPF_EXIT_INSN();
+
+	return insn - insn_buf;
+}
+
+
 static int tc_cls_act_prologue(struct bpf_insn *insn_buf, bool direct_write,
 			       const struct bpf_prog *prog)
 {
@@ -9580,96 +9672,6 @@ static bool __sock_filter_check_size(int off, int size,
 	return size == size_default;
 }
 
-static bool sock_filter_is_valid_access(int off, int size,
-					enum bpf_access_type type,
-					const struct bpf_prog *prog,
-					struct bpf_insn_access_aux *info)
-{
-	if (off < 0 || off >= sizeof(struct bpf_sock))
-		return false;
-	if (off % size != 0)
-		return false;
-	if (!__sock_filter_check_attach_type(off, type,
-					     prog->expected_attach_type))
-		return false;
-	if (!__sock_filter_check_size(off, size, info))
-		return false;
-	return true;
-}
-
-static int bpf_unclone_prologue(struct bpf_insn *insn_buf, bool direct_write,
-				const struct bpf_prog *prog, int drop_verdict)
-{
-	struct bpf_insn *insn = insn_buf;
-
-	if (!direct_write)
-		return 0;
-
-	/* if (!skb->cloned)
-	 *       goto start;
-	 *
-	 * (Fast-path, otherwise approximation that we might be
-	 *  a clone, do the rest in helper.)
-	 */
-	*insn++ = BPF_LDX_MEM(BPF_B, BPF_REG_6, BPF_REG_1, CLONED_OFFSET());
-	*insn++ = BPF_ALU32_IMM(BPF_AND, BPF_REG_6, CLONED_MASK);
-	*insn++ = BPF_JMP_IMM(BPF_JEQ, BPF_REG_6, 0, 7);
-
-	/* ret = bpf_skb_pull_data(skb, 0); */
-	*insn++ = BPF_MOV64_REG(BPF_REG_6, BPF_REG_1);
-	*insn++ = BPF_ALU64_REG(BPF_XOR, BPF_REG_2, BPF_REG_2);
-	*insn++ = BPF_RAW_INSN(BPF_JMP | BPF_CALL, 0, 0, 0,
-			       BPF_FUNC_skb_pull_data);
-	/* if (!ret)
-	 *      goto restore;
-	 * return TC_ACT_SHOT;
-	 */
-	*insn++ = BPF_JMP_IMM(BPF_JEQ, BPF_REG_0, 0, 2);
-	*insn++ = BPF_ALU32_IMM(BPF_MOV, BPF_REG_0, drop_verdict);
-	*insn++ = BPF_EXIT_INSN();
-
-	/* restore: */
-	*insn++ = BPF_MOV64_REG(BPF_REG_1, BPF_REG_6);
-	/* start: */
-	*insn++ = prog->insnsi[0];
-
-	return insn - insn_buf;
-}
-
-static int bpf_gen_ld_abs(const struct bpf_insn *orig,
-			  struct bpf_insn *insn_buf)
-{
-	bool indirect = BPF_MODE(orig->code) == BPF_IND;
-	struct bpf_insn *insn = insn_buf;
-
-	if (!indirect) {
-		*insn++ = BPF_MOV64_IMM(BPF_REG_2, orig->imm);
-	} else {
-		*insn++ = BPF_MOV64_REG(BPF_REG_2, orig->src_reg);
-		if (orig->imm)
-			*insn++ = BPF_ALU64_IMM(BPF_ADD, BPF_REG_2, orig->imm);
-	}
-	/* We're guaranteed here that CTX is in R6. */
-	*insn++ = BPF_MOV64_REG(BPF_REG_1, BPF_REG_CTX);
-
-	switch (BPF_SIZE(orig->code)) {
-	case BPF_B:
-		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_8_no_cache);
-		break;
-	case BPF_H:
-		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_16_no_cache);
-		break;
-	case BPF_W:
-		*insn++ = BPF_EMIT_CALL(bpf_skb_load_helper_32_no_cache);
-		break;
-	}
-
-	*insn++ = BPF_JMP_IMM(BPF_JSGE, BPF_REG_0, 0, 2);
-	*insn++ = BPF_ALU32_REG(BPF_XOR, BPF_REG_0, BPF_REG_0);
-	*insn++ = BPF_EXIT_INSN();
-
-	return insn - insn_buf;
-}
 
 static int bpf_noop_prologue(struct bpf_insn *insn_buf, bool direct_write,
 			     const struct bpf_prog *prog)
@@ -10103,7 +10105,16 @@ static u32 sk_reuseport_convert_ctx_access(enum bpf_access_type type,
 		break;
 
 	case offsetof(struct sk_reuseport_md, ip_protocol):
-		SK_REUSEPORT_LOAD_SK_FIELD(sk_protocol);
+		BUILD_BUG_ON(HWEIGHT32(SK_FL_PROTO_MASK) != BITS_PER_BYTE);
+		SK_REUSEPORT_LOAD_SK_FIELD_SIZE_OFF(__sk_flags_offset,
+						    BPF_W, 0);
+		*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, SK_FL_PROTO_MASK);
+		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg,
+					SK_FL_PROTO_SHIFT);
+		/* SK_FL_PROTO_MASK and SK_FL_PROTO_SHIFT are endian
+		 * aware.  No further narrowing or masking is needed.
+		 */
+		*target_size = 1;
 		break;
 
 	case offsetof(struct sk_reuseport_md, data_end):
