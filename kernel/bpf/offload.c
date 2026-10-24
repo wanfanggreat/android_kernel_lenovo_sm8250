@@ -529,6 +529,7 @@ int bpf_map_offload_info_fill(struct bpf_map_info *info, struct bpf_map *map)
 	struct inode *ns_inode;
 	struct path ns_path;
 	int res;
+	void *__nsret;
 
 	__nsret = ns_get_path_cb(&ns_path, bpf_map_offload_info_fill_ns, &args);
 	res = PTR_ERR_OR_ZERO(__nsret);
