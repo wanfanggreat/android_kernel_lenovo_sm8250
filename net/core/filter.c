@@ -10081,6 +10081,13 @@ sk_reuseport_is_valid_access(int off, int size,
 				    sk,					\
 				    SK_FIELD)
 
+#define SK_REUSEPORT_LOAD_SK_FIELD_SIZE_OFF(SK_FIELD, BPF_SIZE, EXTRA_OFF) \
+	SOCK_ADDR_LOAD_NESTED_FIELD_SIZE_OFF(struct sk_reuseport_kern,	\
+					     struct sock,		\
+					     sk,			\
+					     SK_FIELD, BPF_SIZE, EXTRA_OFF)
+
+
 static u32 sk_reuseport_convert_ctx_access(enum bpf_access_type type,
 					   const struct bpf_insn *si,
 					   struct bpf_insn *insn_buf,
@@ -10453,7 +10460,9 @@ const struct bpf_func_proto bpf_skc_to_udp6_sock_proto = {
 
 BPF_CALL_1(bpf_sock_from_file, struct file *, file)
 {
-	return (unsigned long)sock_from_file(file);
+	int err;
+
+	return (unsigned long)sock_from_file(file, &err);
 }
 
 BTF_ID_LIST(bpf_sock_from_file_btf_ids)
