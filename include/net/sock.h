@@ -2685,4 +2685,13 @@ static inline bool sk_dev_equal_l3scope(struct sock *sk, int dif)
 	return false;
 }
 
+
+#define rcu_assign_sk_user_data_nocopy(sk, ptr)				\
+({									\
+	uintptr_t __tmp = (uintptr_t)(ptr);				\
+	WARN_ON_ONCE(__tmp & ~SK_USER_DATA_PTRMASK);			\
+	rcu_assign_pointer(__sk_user_data((sk)),			\
+			   __tmp | SK_USER_DATA_NOCOPY);		\
+})
+
 #endif	/* _SOCK_H */
