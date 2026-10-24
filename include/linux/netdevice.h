@@ -4892,11 +4892,11 @@ do {								\
 #define PTYPE_HASH_SIZE	(16)
 #define PTYPE_HASH_MASK	(PTYPE_HASH_SIZE - 1)
 
-#endif	/* _LINUX_NETDEVICE_H */
-
 /* p11 K1 compat: 5.x XDP bpf_link attach is not backported; reject it. */
 static inline int bpf_xdp_link_attach(const union bpf_attr *attr,
 				      struct bpf_prog *prog)
 {
 	return -EOPNOTSUPP;
 }
+
+#endif	/* _LINUX_NETDEVICE_H */
