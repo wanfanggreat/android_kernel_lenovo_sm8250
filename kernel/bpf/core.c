@@ -89,7 +89,7 @@ struct bpf_prog *bpf_prog_alloc_no_stats(unsigned int size, gfp_t gfp_extra_flag
 	struct bpf_prog *fp;
 
 	size = round_up(size, PAGE_SIZE);
-	fp = __vmalloc(size, gfp_flags);
+	fp = __vmalloc(size, gfp_flags, PAGE_KERNEL);
 	if (fp == NULL)
 		return NULL;
 
@@ -242,7 +242,7 @@ struct bpf_prog *bpf_prog_realloc(struct bpf_prog *fp_old, unsigned int size,
 	if (pages <= fp_old->pages)
 		return fp_old;
 
-	fp = __vmalloc(size, gfp_flags);
+	fp = __vmalloc(size, gfp_flags, PAGE_KERNEL);
 	if (fp) {
 		memcpy(fp, fp_old, fp_old->pages * PAGE_SIZE);
 		fp->pages = pages;
