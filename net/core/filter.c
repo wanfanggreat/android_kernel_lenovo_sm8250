@@ -104,6 +104,22 @@ static struct neighbour *ip_neigh_gw6(struct net_device *dev,
 
 	return neigh;
 }
+
+/* p11 K1: 5.x helpers adapted to the 4.19 rtable/ APIs */
+static struct neighbour *ip_neigh_for_gw(struct rtable *rt,
+					 struct sk_buff *skb,
+					 bool *is_v6gw)
+{
+	struct net_device *dev = rt->dst.dev;
+
+	return ip_neigh_gw4(dev, rt_nexthop(rt, ip_hdr(skb)->daddr));
+}
+
+/* p11 K1: 5.x tls gate; 4.19 has no TLS rx offload context here */
+static inline bool tls_sw_has_ctx_rx(struct sock *sk)
+{
+	return false;
+}
 #include <net/bpf_sk_storage.h>
 #include <net/transp_v6.h>
 #include <linux/btf_ids.h>
@@ -2391,7 +2407,7 @@ static int bpf_out_neigh_v4(struct net *net, struct sk_buff *skb,
 
 		sock_confirm_neigh(skb, neigh);
 		dev_xmit_recursion_inc();
-		ret = neigh_output(neigh, skb, is_v6gw);
+		ret = neigh_output(neigh, skb);
 		dev_xmit_recursion_dec();
 		rcu_read_unlock_bh();
 		return ret;
@@ -3678,12 +3694,7 @@ BPF_CALL_4(sk_skb_adjust_room, struct sk_buff *, skb, s32, len_diff,
 		__skb_pull(skb, len_diff_abs);
 	}
 	bpf_compute_data_end_sk_skb(skb);
-	static inline bool tls_sw_has_ctx_rx(struct sock *sk)
-{
-	return false;
-}
-
-if (tls_sw_has_ctx_rx(skb->sk)) {
+	if (tls_sw_has_ctx_rx(skb->sk)) {
 		struct strp_msg *rxm = strp_msg(skb);
 
 		rxm->full_len += len_diff;

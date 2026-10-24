@@ -36,6 +36,7 @@ int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len);
 #define BIND_WITH_LOCK			(1 << 1)
 #define BIND_FROM_BPF			(1 << 2)
 #define BIND_NO_CAP_NET_BIND_SERVICE	(1 << 3)
+#define BIND_FORCE_ADDRESS_NO_PORT	(1 << 4)
 
 int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
 		bool force_bind_address_no_port, bool with_lock);
