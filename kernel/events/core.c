@@ -6858,12 +6858,13 @@ perf_event_output_backward(struct perf_event *event,
 	__perf_event_output(event, data, regs, perf_output_begin_backward);
 }
 
-void
+int
 perf_event_output(struct perf_event *event,
 		  struct perf_sample_data *data,
 		  struct pt_regs *regs)
 {
 	__perf_event_output(event, data, regs, perf_output_begin);
+	return 0;
 }
 
 /*

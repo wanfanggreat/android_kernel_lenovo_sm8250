@@ -170,11 +170,12 @@ struct perf_callchain_entry *get_callchain_entry(int *rctx)
 }
 EXPORT_SYMBOL_GPL(get_callchain_entry);
 
-static void
+void
 put_callchain_entry(int rctx)
 {
 	put_recursion_context(this_cpu_ptr(callchain_recursion), rctx);
 }
+EXPORT_SYMBOL_GPL(put_callchain_entry);
 
 struct perf_callchain_entry *
 get_perf_callchain(struct pt_regs *regs, u32 init_nr, bool kernel, bool user,
