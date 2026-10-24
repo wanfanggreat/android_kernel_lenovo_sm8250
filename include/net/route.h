@@ -349,3 +349,16 @@ static inline int ip4_dst_hoplimit(const struct dst_entry *dst)
 }
 
 #endif	/* _ROUTE_H */
+
+/* p11 K1 port from 5.x */
+static inline struct neighbour *ip_neigh_gw4(struct net_device *dev,
+					     __be32 daddr)
+{
+	struct neighbour *neigh;
+
+	neigh = __ipv4_neigh_lookup_noref(dev, (__force u32)daddr);
+	if (unlikely(!neigh))
+		neigh = __neigh_create(&arp_tbl, &daddr, dev, false);
+
+	return neigh;
+}

@@ -434,6 +434,10 @@ static inline void lockdep_on(void)
  */
 struct lock_class_key { };
 
+/* p11 K1 port from 5.x */
+static inline void lockdep_register_key(struct lock_class_key *key) { }
+static inline void lockdep_unregister_key(struct lock_class_key *key) { }
+
 /*
  * The lockdep_map takes no space if lockdep is disabled:
  */

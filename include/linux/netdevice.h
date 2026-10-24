@@ -1442,6 +1442,7 @@ struct net_device_ops {
 						struct xdp_frame **xdp,
 						u32 flags);
 	int			(*ndo_xsk_async_xmit)(struct net_device *dev,
+	struct net_device *	(*ndo_get_peer_dev)(struct net_device *dev);
 						      u32 queue_id);
 
 	ANDROID_KABI_RESERVE(1);
@@ -3695,7 +3696,8 @@ bool is_skb_forwardable(const struct net_device *dev,
 			const struct sk_buff *skb);
 
 static __always_inline int ____dev_forward_skb(struct net_device *dev,
-					       struct sk_buff *skb)
+					       struct sk_buff *skb,
+					       const bool check_mtu)
 {
 	if (skb_orphan_frags(skb, GFP_ATOMIC) ||
 	    unlikely(!is_skb_forwardable(dev, skb))) {

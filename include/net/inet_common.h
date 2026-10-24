@@ -32,6 +32,11 @@ int inet_shutdown(struct socket *sock, int how);
 int inet_listen(struct socket *sock, int backlog);
 void inet_sock_destruct(struct sock *sk);
 int inet_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len);
+/* p11 K1 port from 5.x: bind flags consumed by BPF_CGROUP_INET{4,6}_BIND */
+#define BIND_WITH_LOCK			(1 << 1)
+#define BIND_FROM_BPF			(1 << 2)
+#define BIND_NO_CAP_NET_BIND_SERVICE	(1 << 3)
+
 int __inet_bind(struct sock *sk, struct sockaddr *uaddr, int addr_len,
 		bool force_bind_address_no_port, bool with_lock);
 int inet_getname(struct socket *sock, struct sockaddr *uaddr,

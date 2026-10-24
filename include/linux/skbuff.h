@@ -3198,6 +3198,14 @@ __skb_postpush_rcsum(struct sk_buff *skb, const void *start, unsigned int len,
  *	After doing a push on a received packet, you need to call this to
  *	update the CHECKSUM_COMPLETE checksum.
  */
+static inline void __skb_reset_checksum_unnecessary(struct sk_buff *skb)
+{
+	if (skb->ip_summed == CHECKSUM_UNNECESSARY) {
+		skb->ip_summed = CHECKSUM_NONE;
+		skb->csum_level = 0;
+	}
+}
+
 static inline void skb_postpush_rcsum(struct sk_buff *skb,
 				      const void *start, unsigned int len)
 {
