@@ -36,7 +36,7 @@ static void *bpf_any_get(void *raw, enum bpf_type type)
 		raw = bpf_prog_inc(raw);
 		break;
 	case BPF_TYPE_MAP:
-		raw = bpf_map_inc(raw, true);
+		raw = bpf_map_inc(raw);
 		break;
 	default:
 		WARN_ON_ONCE(1);
