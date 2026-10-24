@@ -6456,6 +6456,8 @@ void cgroup_sk_free(struct sock_cgroup_data *skcd)
 
 #ifdef CONFIG_CGROUP_BPF
 int cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
+		      struct bpf_prog *replace_prog,
+		      struct bpf_cgroup_link *link,
 		      enum bpf_attach_type type, u32 flags)
 {
 	int ret;
@@ -6466,7 +6468,8 @@ int cgroup_bpf_attach(struct cgroup *cgrp, struct bpf_prog *prog,
 	return ret;
 }
 int cgroup_bpf_detach(struct cgroup *cgrp, struct bpf_prog *prog,
-		      enum bpf_attach_type type, u32 flags)
+		      struct bpf_cgroup_link *link,
+		      enum bpf_attach_type type)
 {
 	int ret;
 

@@ -1258,7 +1258,7 @@ struct bpf_prog *bpf_prog_get_type_dev(u32 ufd, enum bpf_prog_type type,
 				       bool attach_drv);
 void bpf_prog_add(struct bpf_prog *prog, int i);
 void bpf_prog_sub(struct bpf_prog *prog, int i);
-void bpf_prog_inc(struct bpf_prog *prog);
+struct bpf_prog *bpf_prog_inc(struct bpf_prog *prog);
 struct bpf_prog * __must_check bpf_prog_inc_not_zero(struct bpf_prog *prog);
 void bpf_prog_put(struct bpf_prog *prog);
 void __bpf_free_used_maps(struct bpf_prog_aux *aux,
@@ -1578,8 +1578,9 @@ static inline void bpf_prog_put(struct bpf_prog *prog)
 {
 }
 
-static inline void bpf_prog_inc(struct bpf_prog *prog)
+static inline struct bpf_prog *bpf_prog_inc(struct bpf_prog *prog)
 {
+	return prog;
 }
 
 static inline struct bpf_prog *__must_check
