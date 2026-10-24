@@ -2243,6 +2243,7 @@ void clean_acked_data_disable(struct inet_connection_sock *icsk);
 
 #endif
 
+struct sk_psock;
 struct proto *tcp_bpf_get_proto(struct sock *sk, struct sk_psock *psock);
 
 #endif	/* _TCP_H */
