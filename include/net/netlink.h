@@ -423,6 +423,11 @@ static inline int nlmsg_parse(const struct nlmsghdr *nlh, int hdrlen,
 			 nlmsg_attrlen(nlh, hdrlen), policy, extack);
 }
 
+/* p11 K1: 5.x strict-parse alias; map to 4.19 nlmsg_parse via #define to
+ * avoid signature mismatch (call sites use the same arg order as
+ * nla_parse_deprecated). */
+#define nlmsg_parse_deprecated nlmsg_parse
+
 /**
  * nlmsg_find_attr - find a specific attribute in a netlink message
  * @nlh: netlink message header
