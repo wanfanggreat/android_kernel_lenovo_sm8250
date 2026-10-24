@@ -1,10 +1,3 @@
-struct saved_syn {
-	u32 mac_hdrlen;
-	u32 network_hdrlen;
-	u32 tcp_hdrlen;
-	u8 data[];
-};
-
 /*
  * NET		Generic infrastructure for Network protocols.
  *
