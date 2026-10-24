@@ -176,7 +176,8 @@ again:
 	rcu_read_lock();
 	for (;; curr_fd++) {
 		struct file *f;
-		f = task_lookup_next_fd_rcu(curr_task, &curr_fd);
+		/* p11 K1: 4.19 files_fdtable walk */
+		f = fcheck_files(curr_task->files, curr_fd);
 		if (!f)
 			break;
 		if (!get_file_rcu(f))
