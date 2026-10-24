@@ -3,6 +3,7 @@
 #define __LINUX_COMPILER_H
 
 #include <linux/compiler_types.h>
+#include <linux/compiler_attributes.h>
 
 #ifndef __ASSEMBLY__
 
