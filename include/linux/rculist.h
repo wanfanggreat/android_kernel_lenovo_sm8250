@@ -10,6 +10,10 @@
 #include <linux/list.h>
 #include <linux/rcupdate.h>
 
+/* p11 K1 port from 5.x: RCU lock check helper for variadic
+ * hlist_for_each_entry_rcu (cond argument). */
+#define __list_check_rcu(dummy, cond, ...) ({ might_sleep(); (void)(cond); })
+
 /*
  * Why is there no list_empty_rcu()?  Because list_empty() serves this
  * purpose.  The list_empty() function fetches the RCU-protected pointer
