@@ -9408,7 +9408,6 @@ static u32 sk_skb_convert_ctx_access(enum bpf_access_type type,
 					      si->src_reg, off);
 		break;
 
-
 	default:
 		return bpf_convert_ctx_access(type, si, insn_buf, prog,
 					      target_size);

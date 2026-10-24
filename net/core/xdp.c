@@ -379,7 +379,7 @@ void __xdp_release_frame(void *data, struct xdp_mem_info *mem)
 	xa = rhashtable_lookup(mem_id_ht, &mem->id, mem_id_rht_params);
 	page = virt_to_head_page(data);
 	if (xa)
-		page_pool_release_page(xa->page_pool, page);
+		/* p11 K1: skipped */
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL_GPL(__xdp_release_frame);
