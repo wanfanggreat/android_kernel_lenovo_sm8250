@@ -36,4 +36,14 @@ enum sknetlink_groups {
 };
 #define SKNLGRP_MAX	(__SKNLGRP_MAX - 1)
 
+/* p11 K1 port from 5.x: sock diag bpf storage */
+enum {
+	SK_DIAG_BPF_STORAGE_REQ_NONE,
+	SK_DIAG_BPF_STORAGE_REQ_MAP_FD,
+	SK_DIAG_BPF_STORAGE_REQ_NUM,
+};
+
+#define SK_DIAG_BPF_STORAGE_PAD		(NLA_ALIGN(NLA_HDRLEN) + 8)
+#define SK_DIAG_BPF_STORAGE_MAX		2
+
 #endif /* _UAPI__SOCK_DIAG_H__ */

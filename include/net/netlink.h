@@ -1308,6 +1308,12 @@ static inline struct nlattr *nla_nest_start(struct sk_buff *skb, int attrtype)
 	return start;
 }
 
+/* p11 K1: 5.x renamed nla_nest_start(); old behaviour keeps flags */
+static inline struct nlattr *nla_nest_start_noflag(struct sk_buff *skb, int attrtype)
+{
+	return nla_nest_start(skb, attrtype);
+}
+
 /**
  * nla_nest_end - Finalize nesting of attributes
  * @skb: socket buffer the attributes are stored in
