@@ -2590,9 +2590,12 @@ void *__vmalloc_node(unsigned long size, unsigned long align,
 #endif
 }
 
-void *__vmalloc(unsigned long size, gfp_t gfp_mask)
+/* p11 K1 port: keep the 4.19 3-arg __vmalloc(size, gfp, prot) signature
+ * so in-tree callers (percpu.c, page_alloc.c) stay untouched. */
+void *__vmalloc(unsigned long size, gfp_t gfp_mask, pgprot_t prot)
 {
-	return __vmalloc_node(size, 1, gfp_mask, NUMA_NO_NODE,
+	return __vmalloc_node_range(size, 1, VMALLOC_START, VMALLOC_END,
+				gfp_mask, prot, 0, NUMA_NO_NODE,
 				__builtin_return_address(0));
 }
 EXPORT_SYMBOL(__vmalloc);
