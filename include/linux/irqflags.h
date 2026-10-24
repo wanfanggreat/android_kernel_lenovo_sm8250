@@ -168,4 +168,9 @@ do {						\
 
 #define irqs_disabled_flags(flags) raw_irqs_disabled_flags(flags)
 
+
+/* p11 K1: 5.x irq work lockdep hooks (no-op without TRACE_IRQFLAGS) */
+#define lockdep_irq_work_enter(__work)		do { } while (0)
+#define lockdep_irq_work_exit(__work)		do { } while (0)
+
 #endif
