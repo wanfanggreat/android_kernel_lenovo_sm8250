@@ -3678,7 +3678,12 @@ BPF_CALL_4(sk_skb_adjust_room, struct sk_buff *, skb, s32, len_diff,
 		__skb_pull(skb, len_diff_abs);
 	}
 	bpf_compute_data_end_sk_skb(skb);
-	if (tls_sw_has_ctx_rx(skb->sk)) {
+	static inline bool tls_sw_has_ctx_rx(struct sock *sk)
+{
+	return false;
+}
+
+if (tls_sw_has_ctx_rx(skb->sk)) {
 		struct strp_msg *rxm = strp_msg(skb);
 
 		rxm->full_len += len_diff;
@@ -4882,69 +4887,8 @@ static const struct bpf_func_proto bpf_sock_ops_setsockopt_proto = {
 static int bpf_sock_ops_get_syn(struct bpf_sock_ops_kern *bpf_sock,
 				int optname, const u8 **start)
 {
-	struct sk_buff *syn_skb = bpf_sock->syn_skb;
-	const u8 *hdr_start;
-	int ret;
-
-	if (syn_skb) {
-		/* sk is a request_sock here */
-
-		if (optname == TCP_BPF_SYN) {
-			hdr_start = syn_skb->data;
-			ret = tcp_hdrlen(syn_skb);
-		} else if (optname == TCP_BPF_SYN_IP) {
-			hdr_start = skb_network_header(syn_skb);
-			ret = skb_network_header_len(syn_skb) +
-				tcp_hdrlen(syn_skb);
-		} else {
-			/* optname == TCP_BPF_SYN_MAC */
-			hdr_start = skb_mac_header(syn_skb);
-			ret = skb_mac_header_len(syn_skb) +
-				skb_network_header_len(syn_skb) +
-				tcp_hdrlen(syn_skb);
-		}
-	} else {
-		struct sock *sk = bpf_sock->sk;
-		struct saved_syn *saved_syn;
-
-		if (sk->sk_state == TCP_NEW_SYN_RECV)
-			/* synack retransmit. bpf_sock->syn_skb will
-			 * not be available.  It has to resort to
-			 * saved_syn (if it is saved).
-			 */
-			saved_syn = inet_reqsk(sk)->saved_syn;
-		else
-			saved_syn = tcp_sk(sk)->saved_syn;
-
-		if (!saved_syn)
-			return -ENOENT;
-
-		if (optname == TCP_BPF_SYN) {
-			hdr_start = saved_syn->data +
-				saved_syn->mac_hdrlen +
-				saved_syn->network_hdrlen;
-			ret = saved_syn->tcp_hdrlen;
-		} else if (optname == TCP_BPF_SYN_IP) {
-			hdr_start = saved_syn->data +
-				saved_syn->mac_hdrlen;
-			ret = saved_syn->network_hdrlen +
-				saved_syn->tcp_hdrlen;
-		} else {
-			/* optname == TCP_BPF_SYN_MAC */
-
-			/* TCP_SAVE_SYN may not have saved the mac hdr */
-			if (!saved_syn->mac_hdrlen)
-				return -ENOENT;
-
-			hdr_start = saved_syn->data;
-			ret = saved_syn->mac_hdrlen +
-				saved_syn->network_hdrlen +
-				saved_syn->tcp_hdrlen;
-		}
-	}
-
-	*start = hdr_start;
-	return ret;
+	/* p11 K1: 4.19 has no saved_syn capture path. */
+	return -ENOSPC;
 }
 
 BPF_CALL_5(bpf_sock_ops_getsockopt, struct bpf_sock_ops_kern *, bpf_sock,
