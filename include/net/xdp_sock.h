@@ -26,6 +26,12 @@ struct xdp_umem_page {
 	dma_addr_t dma;
 };
 
+struct xdp_umem_fq_reuse {
+	u32 nentries;
+	u32 length;
+	u64 handles[];
+};
+
 struct xdp_umem {
 	struct xsk_queue *fq;
 	struct xsk_queue *cq;
@@ -40,10 +46,17 @@ struct xdp_umem {
 	struct page **pgs;
 	u32 npgs;
 	struct net_device *dev;
+	struct xdp_umem_fq_reuse *fq_reuse;
 	u16 queue_id;
 	bool zc;
 	spinlock_t xsk_list_lock;
 	struct list_head xsk_list;
+};
+
+struct xsk_map {
+	struct bpf_map map;
+	spinlock_t lock; /* Synchronize map updates */
+	struct xdp_sock *xsk_map[];
 };
 
 struct xdp_sock {
@@ -54,55 +67,42 @@ struct xdp_sock {
 	struct xdp_umem *umem;
 	struct list_head flush_node;
 	u16 queue_id;
-	struct xsk_queue *tx ____cacheline_aligned_in_smp;
-	struct list_head list;
 	bool zc;
+	enum {
+		XSK_READY = 0,
+		XSK_BOUND,
+		XSK_UNBOUND,
+	} state;
 	/* Protects multiple processes in the control path */
 	struct mutex mutex;
+	struct xsk_queue *tx ____cacheline_aligned_in_smp;
+	struct list_head list;
 	/* Mutual exclusion of NAPI TX thread and sendmsg error paths
 	 * in the SKB destructor callback.
 	 */
 	spinlock_t tx_completion_lock;
 	u64 rx_dropped;
+	struct list_head map_list;
+	/* Protects map_list */
+	spinlock_t map_list_lock;
 };
 
 struct xdp_buff;
 #ifdef CONFIG_XDP_SOCKETS
 int xsk_generic_rcv(struct xdp_sock *xs, struct xdp_buff *xdp);
-int xsk_rcv(struct xdp_sock *xs, struct xdp_buff *xdp);
-void xsk_flush(struct xdp_sock *xs);
-bool xsk_is_setup_for_bpf_map(struct xdp_sock *xs);
 /* Used from netdev driver */
 u64 *xsk_umem_peek_addr(struct xdp_umem *umem, u64 *addr);
 void xsk_umem_discard_addr(struct xdp_umem *umem);
 void xsk_umem_complete_tx(struct xdp_umem *umem, u32 nb_entries);
 bool xsk_umem_consume_tx(struct xdp_umem *umem, dma_addr_t *dma, u32 *len);
 void xsk_umem_consume_tx_done(struct xdp_umem *umem);
-#else
-static inline int xsk_generic_rcv(struct xdp_sock *xs, struct xdp_buff *xdp)
-{
-	return -ENOTSUPP;
-}
+struct xdp_umem_fq_reuse *xsk_reuseq_prepare(u32 nentries);
+struct xdp_umem_fq_reuse *xsk_reuseq_swap(struct xdp_umem *umem,
+					  struct xdp_umem_fq_reuse *newq);
+void xsk_reuseq_free(struct xdp_umem_fq_reuse *rq);
 
-static inline int xsk_rcv(struct xdp_sock *xs, struct xdp_buff *xdp)
-{
-	return -ENOTSUPP;
-}
-
-static inline void xsk_flush(struct xdp_sock *xs)
-{
-}
-
-static inline bool xsk_is_setup_for_bpf_map(struct xdp_sock *xs)
-{
-	return false;
-}
 int __xsk_map_redirect(struct xdp_sock *xs, struct xdp_buff *xdp);
 void __xsk_map_flush(void);
-
-#endif /* CONFIG_XDP_SOCKETS */
-
-#endif /* _LINUX_XDP_SOCK_H */
 
 static inline struct xdp_sock *__xsk_map_lookup_elem(struct bpf_map *map,
 						     u32 key)
@@ -236,4 +236,6 @@ static inline struct xdp_sock *__xsk_map_lookup_elem(struct bpf_map *map,
 {
 	return NULL;
 }
+#endif /* CONFIG_XDP_SOCKETS */
 
+#endif /* _LINUX_XDP_SOCK_H */
