@@ -9565,6 +9565,21 @@ const struct bpf_verifier_ops sk_filter_verifier_ops = {
 	.gen_ld_abs		= bpf_gen_ld_abs,
 };
 
+static bool __sock_filter_check_size(int off, int size,
+				     struct bpf_insn_access_aux *info)
+{
+	const int size_default = sizeof(__u32);
+
+	switch (off) {
+	case bpf_ctx_range(struct bpf_sock, src_ip4):
+	case bpf_ctx_range_till(struct bpf_sock, src_ip6[0], src_ip6[3]):
+		bpf_ctx_record_field_size(info, size_default);
+		return bpf_ctx_narrow_access_ok(off, size, size_default);
+	}
+
+	return size == size_default;
+}
+
 static bool sock_filter_is_valid_access(int off, int size,
 					enum bpf_access_type type,
 					const struct bpf_prog *prog,
@@ -9654,6 +9669,15 @@ static int bpf_gen_ld_abs(const struct bpf_insn *orig,
 	*insn++ = BPF_EXIT_INSN();
 
 	return insn - insn_buf;
+}
+
+static int bpf_noop_prologue(struct bpf_insn *insn_buf, bool direct_write,
+			     const struct bpf_prog *prog)
+{
+	/* Neither direct read nor direct write requires any preliminary
+	 * action.
+	 */
+	return 0;
 }
 
 const struct bpf_prog_ops sk_filter_prog_ops = {
