@@ -218,12 +218,9 @@ extern int _cond_resched(void);
 # define might_resched() do { } while (0)
 #endif
 
-#ifndef CONFIG_PREEMPT_RT
-# define cant_migrate()		cant_sleep()
-#else
-  /* Placeholder for now */
-# define cant_migrate()		do { } while (0)
-#endif
+/* p11 K1 port: 4.19 has no migrate_disable; assertion degrades to
+ * might_sleep() like upstream's cant_sleep() without DEBUG_ATOMIC_SLEEP. */
+# define cant_migrate()		might_sleep()
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
   void ___might_sleep(const char *file, int line, int preempt_offset);
