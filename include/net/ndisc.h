@@ -57,7 +57,6 @@ enum {
 #include <linux/hash.h>
 
 #include <net/neighbour.h>
-#include <net/addrconf.h>
 
 /* Set to 3 to get tracing... */
 #define ND_DEBUG 1
@@ -463,6 +462,7 @@ int ndisc_ifinfo_sysctl_strategy(struct ctl_table *ctl,
 
 void inet6_ifinfo_notify(int event, struct inet6_dev *idev);
 
+#endif
 
 /* p11 K1 port from 5.x: uses ipv6_stub and is meant for use outside IPv6 */
 static inline struct neighbour *ip_neigh_gw6(struct net_device *dev,
@@ -476,5 +476,3 @@ static inline struct neighbour *ip_neigh_gw6(struct net_device *dev,
 
 	return neigh;
 }
-
-#endif

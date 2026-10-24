@@ -348,6 +348,7 @@ static inline int ip4_dst_hoplimit(const struct dst_entry *dst)
 	return hoplimit;
 }
 
+#endif	/* _ROUTE_H */
 
 /* p11 K1 port from 5.x */
 static inline struct neighbour *ip_neigh_gw4(struct net_device *dev,
@@ -361,5 +362,3 @@ static inline struct neighbour *ip_neigh_gw4(struct net_device *dev,
 
 	return neigh;
 }
-
-#endif	/* _ROUTE_H */

@@ -77,6 +77,32 @@
 #include <net/seg6_local.h>
 #include <net/lwtunnel.h>
 #include <net/addrconf.h>
+
+/* p11 K1 port: neighbour helpers from 5.x route.h/ndisc.h, local to the
+ * only in-tree consumer. */
+static struct neighbour *ip_neigh_gw4(struct net_device *dev,
+				      __be32 daddr)
+{
+	struct neighbour *neigh;
+
+	neigh = __ipv4_neigh_lookup_noref(dev, (__force u32)daddr);
+	if (unlikely(!neigh))
+		neigh = __neigh_create(&arp_tbl, &daddr, dev, false);
+
+	return neigh;
+}
+
+static struct neighbour *ip_neigh_gw6(struct net_device *dev,
+				      const void *addr)
+{
+	struct neighbour *neigh;
+
+	neigh = __ipv6_neigh_lookup_noref_stub(dev, addr);
+	if (unlikely(!neigh))
+		neigh = __neigh_create(ipv6_stub->nd_tbl, addr, dev, false);
+
+	return neigh;
+}
 #include <net/bpf_sk_storage.h>
 #include <net/transp_v6.h>
 #include <linux/btf_ids.h>
