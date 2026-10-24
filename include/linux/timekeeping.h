@@ -159,12 +159,13 @@ static inline u64 ktime_get_real_ns(void)
 	return ktime_to_ns(ktime_get_real());
 }
 
-static inline u64 ktime_get_boot_ns(void);
-static inline u64 ktime_get_boottime_ns(void) { return ktime_get_boot_ns(); }
-
+static inline u64 ktime_get_boot_ns(void)
 {
 	return ktime_to_ns(ktime_get_boottime());
 }
+
+/* p11 K1 compat: 5.x renamed ktime_get_boot_ns -> ktime_get_boottime_ns */
+static inline u64 ktime_get_boottime_ns(void) { return ktime_get_boot_ns(); }
 
 static inline u64 ktime_get_tai_ns(void)
 {
