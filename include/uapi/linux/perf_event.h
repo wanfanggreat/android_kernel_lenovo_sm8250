@@ -969,6 +969,14 @@ enum perf_event_type {
 #define PERF_MAX_STACK_DEPTH		127
 #define PERF_MAX_CONTEXTS_PER_STACK	  8
 
+/*
+ * PERF_RECORD_BPF_EVENT (p11 K1 compat: values per 5.x uapi, used by
+ * ported kernel/bpf; the record itself is not emitted on 4.19).
+ */
+#define PERF_BPF_EVENT_UNKNOWN		0
+#define PERF_BPF_EVENT_PROG_LOAD	1
+#define PERF_BPF_EVENT_PROG_UNLOAD	2
+
 enum perf_callchain_context {
 	PERF_CONTEXT_HV			= (__u64)-32,
 	PERF_CONTEXT_KERNEL		= (__u64)-128,

@@ -1336,3 +1336,14 @@ static inline void memcg_set_shrinker_bit(struct mem_cgroup *memcg,
 #endif /* CONFIG_MEMCG_KMEM */
 
 #endif /* _LINUX_MEMCONTROL_H */
+
+/* p11 K1 compat: 4.19 has no active-memcg plumbing; ported kernel/bpf
+ * accounting degrades to no accounting, matching stock 4.19 BPF. */
+static inline struct mem_cgroup *set_active_memcg(struct mem_cgroup *memcg)
+{
+	return NULL;
+}
+static inline struct mem_cgroup *get_active_memcg(void)
+{
+	return NULL;
+}

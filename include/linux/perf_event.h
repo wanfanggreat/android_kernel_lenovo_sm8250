@@ -1487,3 +1487,7 @@ int perf_event_restart_events(unsigned int cpu);
 #endif
 
 #endif /* _LINUX_PERF_EVENT_H */
+
+/* p11 K1 compat: 5.x emits perf BPF events from kernel/bpf; no-op on 4.19 */
+struct bpf_prog;
+static inline void perf_event_bpf_event(struct bpf_prog *prog, u32 type, u32 flags) { }
