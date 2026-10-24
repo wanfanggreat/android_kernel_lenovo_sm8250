@@ -76,7 +76,7 @@
 #include <net/seg6.h>
 #include <net/seg6_local.h>
 #include <net/lwtunnel.h>
-#include <net/ipv6_stubs.h>
+#include <net/addrconf.h>
 #include <net/bpf_sk_storage.h>
 #include <net/transp_v6.h>
 #include <linux/btf_ids.h>
@@ -5517,13 +5517,13 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 {
 	struct in6_addr *src = (struct in6_addr *) params->ipv6_src;
 	struct in6_addr *dst = (struct in6_addr *) params->ipv6_dst;
-	struct fib6_result res = {};
 	struct neighbour *neigh;
 	struct net_device *dev;
 	struct inet6_dev *idev;
+	struct fib6_info *f6i;
 	struct flowi6 fl6;
 	int strict = 0;
-	int oif, err;
+	int oif;
 	u32 mtu = 0;
 
 	/* link local addresses are never forwarded */
@@ -5565,61 +5565,63 @@ static int bpf_ipv6_fib_lookup(struct net *net, struct bpf_fib_lookup *params,
 		if (unlikely(!tb))
 			return BPF_FIB_LKUP_RET_NOT_FWDED;
 
-		err = ipv6_stub->fib6_table_lookup(net, tb, oif, &fl6, &res,
-						   strict);
+		f6i = ipv6_stub->fib6_table_lookup(net, tb, oif, &fl6, strict);
 	} else {
 		fl6.flowi6_mark = 0;
 		fl6.flowi6_secid = 0;
 		fl6.flowi6_tun_key.tun_id = 0;
 		fl6.flowi6_uid = sock_net_uid(net, NULL);
 
-		err = ipv6_stub->fib6_lookup(net, oif, &fl6, &res, strict);
+		f6i = ipv6_stub->fib6_lookup(net, oif, &fl6, strict);
 	}
 
-	if (unlikely(err || IS_ERR_OR_NULL(res.f6i) ||
-		     res.f6i == net->ipv6.fib6_null_entry))
+	if (unlikely(IS_ERR_OR_NULL(f6i) || f6i == net->ipv6.fib6_null_entry))
 		return BPF_FIB_LKUP_RET_NOT_FWDED;
 
-	switch (res.fib6_type) {
-	/* only unicast is forwarded */
-	case RTN_UNICAST:
-		break;
-	case RTN_BLACKHOLE:
-		return BPF_FIB_LKUP_RET_BLACKHOLE;
-	case RTN_UNREACHABLE:
-		return BPF_FIB_LKUP_RET_UNREACHABLE;
-	case RTN_PROHIBIT:
-		return BPF_FIB_LKUP_RET_PROHIBIT;
-	default:
-		return BPF_FIB_LKUP_RET_NOT_FWDED;
-	}
-
-	ipv6_stub->fib6_select_path(net, &res, &fl6, fl6.flowi6_oif,
-				    fl6.flowi6_oif != 0, NULL, strict);
-
-	if (check_mtu) {
-		mtu = ipv6_stub->ip6_mtu_from_fib6(&res, dst, src);
-		if (params->tot_len > mtu) {
-			params->mtu_result = mtu; /* union with tot_len */
-			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
+	if (unlikely(f6i->fib6_flags & RTF_REJECT)) {
+		switch (f6i->fib6_type) {
+		case RTN_BLACKHOLE:
+			return BPF_FIB_LKUP_RET_BLACKHOLE;
+		case RTN_UNREACHABLE:
+			return BPF_FIB_LKUP_RET_UNREACHABLE;
+		case RTN_PROHIBIT:
+			return BPF_FIB_LKUP_RET_PROHIBIT;
+		default:
+			return BPF_FIB_LKUP_RET_NOT_FWDED;
 		}
 	}
 
-	if (res.nh->fib_nh_lws)
+	if (f6i->fib6_type != RTN_UNICAST)
+		return BPF_FIB_LKUP_RET_NOT_FWDED;
+
+	if (f6i->fib6_nsiblings && fl6.flowi6_oif == 0)
+		f6i = ipv6_stub->fib6_multipath_select(net, f6i, &fl6,
+						       fl6.flowi6_oif, NULL,
+						       strict);
+
+	if (check_mtu) {
+		mtu = ipv6_stub->ip6_mtu_from_fib6(f6i, dst, src);
+		if (params->tot_len > mtu)
+			return BPF_FIB_LKUP_RET_FRAG_NEEDED;
+	}
+
+	if (f6i->fib6_nh.nh_lwtstate)
 		return BPF_FIB_LKUP_RET_UNSUPP_LWT;
 
-	if (res.nh->fib_nh_gw_family)
-		*dst = res.nh->fib_nh_gw6;
+	if (f6i->fib6_flags & RTF_GATEWAY)
+		*dst = f6i->fib6_nh.nh_gw;
 
-	dev = res.nh->fib_nh_dev;
-	params->rt_metric = res.f6i->fib6_metric;
+	dev = f6i->fib6_nh.nh_dev;
+	params->rt_metric = f6i->fib6_metric;
 	params->ifindex = dev->ifindex;
 
 	/* xdp and cls_bpf programs are run in RCU-bh so rcu_read_lock_bh is
-	 * not needed here.
+	 * not needed here. Can not use __ipv6_neigh_lookup_noref here
+	 * because we need to get nd_tbl via the stub
 	 */
-	neigh = __ipv6_neigh_lookup_noref_stub(dev, dst);
-	if (!neigh || !(neigh->nud_state & NUD_VALID))
+	neigh = ___neigh_lookup_noref(ipv6_stub->nd_tbl, neigh_key_eq128,
+				      ndisc_hashfn, dst, dev);
+	if (!neigh)
 		return BPF_FIB_LKUP_RET_NO_NEIGH;
 
 	return bpf_fib_set_fwd_params(params, neigh, dev, mtu);
