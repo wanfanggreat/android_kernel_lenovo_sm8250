@@ -64,6 +64,11 @@
 #define KIMAGE_VADDR		(MODULES_END)
 #define MODULES_END		(MODULES_VADDR + MODULES_VSIZE)
 #define MODULES_VADDR		(VA_START + KASAN_SHADOW_SIZE)
+/* p11 K1 port: BPF JIT region aliases the module window, matching stock
+ * 4.19 behaviour where bpf_jit_alloc_exec() allocated via module_alloc().
+ * Keeping the virtual memory layout identical avoids moving KIMAGE_VADDR. */
+#define BPF_JIT_REGION_START	MODULES_VADDR
+#define BPF_JIT_REGION_END	MODULES_END
 #define MODULES_VSIZE		(SZ_128M)
 #define VMEMMAP_START		(PAGE_OFFSET - VMEMMAP_SIZE)
 #define PCI_IO_END		(VMEMMAP_START - SZ_2M)
