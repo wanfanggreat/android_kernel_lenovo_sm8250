@@ -453,6 +453,8 @@ struct module {
 #ifdef CONFIG_EVENT_TRACING
 	struct trace_event_call **trace_events;
 	unsigned int num_trace_events;
+	unsigned int num_bpf_raw_events;
+	struct bpf_raw_event_map *bpf_raw_events;
 	struct trace_eval_map **trace_evals;
 	unsigned int num_trace_evals;
 #endif

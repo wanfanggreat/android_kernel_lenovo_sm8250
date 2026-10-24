@@ -360,6 +360,28 @@ static __always_inline long strncpy_from_user_nofault(char *dst, const void __us
 {
 	return strncpy_from_unsafe_user(dst, unsafe_src, count);
 }
+
+static __always_inline long copy_from_user_nofault(void *dst, const void __user *src, size_t size)
+{
+	long ret = -EFAULT;
+
+	pagefault_disable();
+	if (!__copy_from_user_inatomic(dst, src, size))
+		ret = 0;
+	pagefault_enable();
+	return ret;
+}
+
+static __always_inline long copy_to_user_nofault(void __user *dst, const void *src, size_t size)
+{
+	long ret = -EFAULT;
+
+	pagefault_disable();
+	if (!__copy_to_user_inatomic(dst, src, size))
+		ret = 0;
+	pagefault_enable();
+	return ret;
+}
 static __always_inline long strncpy_from_kernel_nofault(char *dst, const void *unsafe_src, size_t count)
 {
 	return strncpy_from_unsafe(dst, unsafe_src, count);
