@@ -8358,12 +8358,10 @@ static u32 bpf_convert_ctx_access(enum bpf_access_type type,
 
 	case offsetof(struct __sk_buff, vlan_present):
 		*target_size = 1;
-		*insn++ = BPF_LDX_MEM(BPF_B, si->dst_reg, si->src_reg,
-				      PKT_VLAN_PRESENT_OFFSET());
-		if (PKT_VLAN_PRESENT_BIT)
-			*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg, PKT_VLAN_PRESENT_BIT);
-		if (PKT_VLAN_PRESENT_BIT < 7)
-			*insn++ = BPF_ALU32_IMM(BPF_AND, si->dst_reg, 1);
+		/* p11 K1: 4.19 keeps VLAN_TAG_PRESENT inside vlan_tci */
+		*insn++ = BPF_LDX_MEM(BPF_H, si->dst_reg, si->src_reg,
+				      offsetof(struct sk_buff, vlan_tci));
+		*insn++ = BPF_ALU32_IMM(BPF_RSH, si->dst_reg, 12);
 		break;
 
 	case offsetof(struct __sk_buff, vlan_tci):

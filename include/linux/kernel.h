@@ -221,6 +221,7 @@ extern int _cond_resched(void);
 /* p11 K1 port: 4.19 has no migrate_disable; assertion degrades to
  * might_sleep() like upstream's cant_sleep() without DEBUG_ATOMIC_SLEEP. */
 # define cant_migrate()		might_sleep()
+# define cant_sleep()		might_sleep()
 
 #ifdef CONFIG_DEBUG_ATOMIC_SLEEP
   void ___might_sleep(const char *file, int line, int preempt_offset);

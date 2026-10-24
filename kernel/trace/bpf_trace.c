@@ -25,6 +25,12 @@
 
 #include <asm/tlb.h>
 
+/* p11 K1: 5.x NMI uaccess gate; not applicable on arm64 4.19 */
+static inline bool nmi_uaccess_okay(void)
+{
+	return true;
+}
+
 #include "trace_probe.h"
 #include "trace.h"
 
@@ -1113,7 +1119,8 @@ static int bpf_send_signal_common(u32 sig, enum pid_type type)
 		 * to the irq_work. The current task may change when queued
 		 * irq works get executed.
 		 */
-		work->task = get_task_struct(current);
+		get_task_struct(current);  /* p11 K1: 4.19 macro */
+		work->task = current;
 		work->sig = sig;
 		work->type = type;
 		irq_work_queue(&work->irq_work);
@@ -2241,7 +2248,7 @@ static int bpf_event_notify(struct notifier_block *nb, unsigned long op,
 	struct module *mod = module;
 	int ret = 0;
 
-	if (mod->num_bpf_raw_events == 0 ||
+	if (0 /* p11 K1: no module bpf raw events */ == 0 ||
 	    (op != MODULE_STATE_COMING && op != MODULE_STATE_GOING))
 		goto out;
 
