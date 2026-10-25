@@ -1205,7 +1205,13 @@ static void device_restart_work_hdlr(struct work_struct *work)
 	 * sync() and fclose() on attempting the dump.
 	 */
 	msleep(100);
-	panic("subsys-restart: Resetting the SoC - %s crashed.",
+	/*
+	 * p11 diag: do not reset the SoC when a remote subsystem (e.g. slpi)
+	 * crashes.  It keeps the Android boot alive so adb/logcat can capture
+	 * the remaining P0/P1 failures; affected DSP functions stay broken.
+	 * Revert once ION/QSEECom/firmware_mnt (P1) are restored.
+	 */
+	pr_err("subsys-restart: %s crashed; p11 diag: skipping SoC reset\n",
 							dev->desc->name);
 }
 
