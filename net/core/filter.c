@@ -26,6 +26,7 @@
 #include <linux/mm.h>
 #include <linux/fcntl.h>
 #include <linux/socket.h>
+#include <linux/capability.h>
 #include <linux/sock_diag.h>
 #include <linux/in.h>
 #include <linux/inet.h>
@@ -4821,6 +4822,37 @@ static const struct bpf_func_proto bpf_get_socket_uid_proto = {
 	.arg1_type      = ARG_PTR_TO_CTX,
 };
 
+#ifdef CONFIG_NETDEVICES
+/* p11 K1: 4.19 equivalent of the 5.x sock_bindtoindex_locked().
+ * The caller already holds the socket lock.
+ */
+static int bpf_sock_bindtoindex_locked(struct sock *sk, int ifindex)
+{
+	struct net *net = sock_net(sk);
+	int ret = -EPERM;
+
+	if (!ns_capable(net->user_ns, CAP_NET_RAW))
+		goto out;
+
+	ret = -EINVAL;
+	if (ifindex < 0)
+		goto out;
+
+	sk->sk_bound_dev_if = ifindex;
+	if (sk->sk_prot->rehash)
+		sk->sk_prot->rehash(sk);
+	sk_dst_reset(sk);
+	ret = 0;
+out:
+	return ret;
+}
+#else
+static int bpf_sock_bindtoindex_locked(struct sock *sk, int ifindex)
+{
+	return -ENOPROTOOPT;
+}
+#endif
+
 /* p11 K1: 4.19 port of the 5.x BPF sockopt helpers. Only options whose
  * kernel-side state exists in this tree are accepted. The 5.x-only
  * TCP_BPF_DELACK_MAX / TCP_BPF_RTO_MIN (icsk_delack_max / icsk_rto_min)
@@ -4831,8 +4863,6 @@ static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 {
 	char devname[IFNAMSIZ];
 	int val, valbool;
-	struct net *net;
-	int ifindex;
 	int ret = 0;
 
 	if (!sk_fullsock(sk))
@@ -4841,7 +4871,27 @@ static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 	sock_owned_by_me(sk);
 
 	if (level == SOL_SOCKET) {
-		if (optlen != sizeof(int) && optname != SO_BINDTODEVICE)
+		if (optname == SO_BINDTODEVICE) {
+			struct net_device *dev;
+			int ifindex = 0;
+
+			if (optlen < 0)
+				return -EINVAL;
+			optlen = min_t(long, optlen, IFNAMSIZ - 1);
+			strncpy(devname, optval, optlen);
+			devname[optlen] = 0;
+
+			if (devname[0] != '\0') {
+				dev = dev_get_by_name(sock_net(sk), devname);
+				if (!dev)
+					return -ENODEV;
+				ifindex = dev->ifindex;
+				dev_put(dev);
+			}
+			return bpf_sock_bindtoindex_locked(sk, ifindex);
+		}
+
+		if (optlen != sizeof(int))
 			return -EINVAL;
 		val = *((int *)optval);
 		valbool = val ? 1 : 0;
@@ -4885,35 +4935,8 @@ static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 				sk_dst_reset(sk);
 			}
 			break;
-		case SO_BINDTODEVICE: {
-			struct net_device *dev;
-
-			optlen = min_t(long, optlen, IFNAMSIZ - 1);
-			strncpy(devname, optval, optlen);
-			devname[optlen] = 0;
-
-			net = sock_net(sk);
-			ret = -ENODEV;
-			ifindex = 0;
-			if (devname[0] != '\0') {
-				dev = dev_get_by_name(net, devname);
-				if (!dev)
-					break;
-				ifindex = dev->ifindex;
-				dev_put(dev);
-			}
-			sk->sk_bound_dev_if = ifindex;
-			sk_dst_reset(sk);
-			ret = 0;
-			break;
-		}
 		case SO_BINDTOIFINDEX:
-			if (val < 0) {
-				ret = -EINVAL;
-				break;
-			}
-			sk->sk_bound_dev_if = val;
-			sk_dst_reset(sk);
+			ret = bpf_sock_bindtoindex_locked(sk, val);
 			break;
 		case SO_KEEPALIVE:
 			if (sk->sk_prot->keepalive)
