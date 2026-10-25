@@ -559,6 +559,9 @@ struct sock *tcp_create_openreq_child(const struct sock *sk,
 	tcp_ecn_openreq_child(newtp, req);
 	newtp->fastopen_req = NULL;
 	newtp->fastopen_rsk = NULL;
+
+	tcp_bpf_clone(sk, newsk);
+
 	newtp->syn_data_acked = 0;
 	newtp->rack.mstamp = 0;
 	newtp->rack.advanced = 0;

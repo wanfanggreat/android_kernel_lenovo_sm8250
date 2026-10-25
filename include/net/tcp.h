@@ -2244,9 +2244,26 @@ void clean_acked_data_disable(struct inet_connection_sock *icsk);
 
 #endif
 
+#ifdef CONFIG_NET_SOCK_MSG
+struct sk_msg;
 struct sk_psock;
-struct proto *tcp_bpf_get_proto(struct sock *sk, struct sk_psock *psock);
 
+#ifdef CONFIG_BPF_SYSCALL
+struct proto *tcp_bpf_get_proto(struct sock *sk, struct sk_psock *psock);
+void tcp_bpf_clone(const struct sock *sk, struct sock *newsk);
+#endif /* CONFIG_BPF_SYSCALL */
+
+int tcp_bpf_sendmsg_redir(struct sock *sk, struct sk_msg *msg, u32 bytes,
+			  int flags);
+int __tcp_bpf_recvmsg(struct sock *sk, struct sk_psock *psock,
+		      struct msghdr *msg, int len, int flags);
+#endif /* CONFIG_NET_SOCK_MSG */
+
+#if !defined(CONFIG_BPF_SYSCALL) || !defined(CONFIG_NET_SOCK_MSG)
+static inline void tcp_bpf_clone(const struct sock *sk, struct sock *newsk)
+{
+}
+#endif
 
 struct sock;
 
