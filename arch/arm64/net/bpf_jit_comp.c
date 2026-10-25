@@ -948,7 +948,7 @@ emit_cond_jmp:
 				emit(A64_ORR(isdw, tmp2, src, ax), ctx);
 			else
 				emit(A64_EOR(isdw, tmp2, src, ax), ctx);
-			emit(A64_STXR(isdw, tmp2, reg, tmp3), ctx);
+			emit(A64_STLXR(isdw, tmp2, reg, tmp3), ctx);
 			jmp_offset = -3;
 			check_imm19(jmp_offset);
 			emit(A64_CBNZ(0, tmp3, jmp_offset), ctx);
@@ -960,7 +960,7 @@ emit_cond_jmp:
 		case BPF_XCHG:
 			emit(A64_MOV(isdw, tmp2, src), ctx);
 			emit(A64_LDXR(isdw, src, reg), ctx);
-			emit(A64_STXR(isdw, tmp2, reg, tmp3), ctx);
+			emit(A64_STLXR(isdw, tmp2, reg, tmp3), ctx);
 			jmp_offset = -2;
 			check_imm19(jmp_offset);
 			emit(A64_CBNZ(0, tmp3, jmp_offset), ctx);
@@ -977,7 +977,7 @@ emit_cond_jmp:
 			jmp_offset = 4;
 			check_imm19(jmp_offset);
 			emit(A64_CBNZ(isdw, tmp3, jmp_offset), ctx);
-			emit(A64_STXR(isdw, src, reg, tmp3), ctx);
+			emit(A64_STLXR(isdw, src, reg, tmp3), ctx);
 			jmp_offset = -4;
 			check_imm19(jmp_offset);
 			emit(A64_CBNZ(0, tmp3, jmp_offset), ctx);

@@ -714,6 +714,10 @@ u32 aarch64_insn_gen_load_store_ex(enum aarch64_insn_register reg,
 	case AARCH64_INSN_LDST_STORE_EX:
 		insn = aarch64_insn_get_store_ex_value();
 		break;
+	case AARCH64_INSN_LDST_STORE_REL_EX:
+		/* STLXR is STXR with o0 (bit 15) set: store-release */
+		insn = aarch64_insn_get_store_ex_value() | (1u << 15);
+		break;
 	default:
 		pr_err("%s: unknown load/store exclusive encoding %d\n", __func__, type);
 		return AARCH64_BREAK_FAULT;
