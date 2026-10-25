@@ -115,11 +115,6 @@ static struct neighbour *ip_neigh_for_gw(struct rtable *rt,
 	return ip_neigh_gw4(dev, rt_nexthop(rt, ip_hdr(skb)->daddr));
 }
 
-/* p11 K1: 5.x tls gate; 4.19 has no TLS rx offload context here */
-static inline bool tls_sw_has_ctx_rx(struct sock *sk)
-{
-	return false;
-}
 #include <net/bpf_sk_storage.h>
 #include <net/transp_v6.h>
 #include <linux/btf_ids.h>
@@ -4826,22 +4821,354 @@ static const struct bpf_func_proto bpf_get_socket_uid_proto = {
 	.arg1_type      = ARG_PTR_TO_CTX,
 };
 
+/* p11 K1: 4.19 port of the 5.x BPF sockopt helpers. Only options whose
+ * kernel-side state exists in this tree are accepted. The 5.x-only
+ * TCP_BPF_DELACK_MAX / TCP_BPF_RTO_MIN (icsk_delack_max / icsk_rto_min)
+ * are rejected explicitly instead of being silently reported as applied.
+ */
 static int _bpf_setsockopt(struct sock *sk, int level, int optname,
 			   char *optval, int optlen)
 {
-	/* p11 K1: 4.19 lacks the 5.x socket/TCP APIs (SO_BINDTOIFINDEX,
-	 * saved_syn, icsk_delack_max, tls_sw...). None of the five
-	 * netbpfload objects use sockopt helpers; reject instead. */
-	return -EOPNOTSUPP;
+	char devname[IFNAMSIZ];
+	int val, valbool;
+	struct net *net;
+	int ifindex;
+	int ret = 0;
+
+	if (!sk_fullsock(sk))
+		return -EINVAL;
+
+	sock_owned_by_me(sk);
+
+	if (level == SOL_SOCKET) {
+		if (optlen != sizeof(int) && optname != SO_BINDTODEVICE)
+			return -EINVAL;
+		val = *((int *)optval);
+		valbool = val ? 1 : 0;
+
+		switch (optname) {
+		case SO_RCVBUF:
+			val = min_t(u32, val, sysctl_rmem_max);
+			val = min_t(int, val, INT_MAX / 2);
+			sk->sk_userlocks |= SOCK_RCVBUF_LOCK;
+			WRITE_ONCE(sk->sk_rcvbuf,
+				   max_t(int, val * 2, SOCK_MIN_RCVBUF));
+			break;
+		case SO_SNDBUF:
+			val = min_t(u32, val, sysctl_wmem_max);
+			val = min_t(int, val, INT_MAX / 2);
+			sk->sk_userlocks |= SOCK_SNDBUF_LOCK;
+			WRITE_ONCE(sk->sk_sndbuf,
+				   max_t(int, val * 2, SOCK_MIN_SNDBUF));
+			break;
+		case SO_MAX_PACING_RATE:
+			if (val != ~0U)
+				cmpxchg(&sk->sk_pacing_status,
+					SK_PACING_NONE,
+					SK_PACING_NEEDED);
+			sk->sk_max_pacing_rate = (val == ~0U) ?
+						 ~0U : (unsigned int)val;
+			sk->sk_pacing_rate = min(sk->sk_pacing_rate,
+						 sk->sk_max_pacing_rate);
+			break;
+		case SO_PRIORITY:
+			sk->sk_priority = val;
+			break;
+		case SO_RCVLOWAT:
+			if (val < 0)
+				val = INT_MAX;
+			WRITE_ONCE(sk->sk_rcvlowat, val ? : 1);
+			break;
+		case SO_MARK:
+			if (sk->sk_mark != val) {
+				sk->sk_mark = val;
+				sk_dst_reset(sk);
+			}
+			break;
+		case SO_BINDTODEVICE: {
+			struct net_device *dev;
+
+			optlen = min_t(long, optlen, IFNAMSIZ - 1);
+			strncpy(devname, optval, optlen);
+			devname[optlen] = 0;
+
+			net = sock_net(sk);
+			ret = -ENODEV;
+			ifindex = 0;
+			if (devname[0] != '\0') {
+				dev = dev_get_by_name(net, devname);
+				if (!dev)
+					break;
+				ifindex = dev->ifindex;
+				dev_put(dev);
+			}
+			sk->sk_bound_dev_if = ifindex;
+			sk_dst_reset(sk);
+			ret = 0;
+			break;
+		}
+		case SO_BINDTOIFINDEX:
+			if (val < 0) {
+				ret = -EINVAL;
+				break;
+			}
+			sk->sk_bound_dev_if = val;
+			sk_dst_reset(sk);
+			break;
+		case SO_KEEPALIVE:
+			if (sk->sk_prot->keepalive)
+				sk->sk_prot->keepalive(sk, valbool);
+			if (valbool)
+				sock_set_flag(sk, SOCK_KEEPOPEN);
+			else
+				sock_reset_flag(sk, SOCK_KEEPOPEN);
+			break;
+		default:
+			ret = -EINVAL;
+		}
+#ifdef CONFIG_INET
+	} else if (level == SOL_IP) {
+		if (optlen != sizeof(int) || sk->sk_family != AF_INET)
+			return -EINVAL;
+
+		val = *((int *)optval);
+		switch (optname) {
+		case IP_TOS:
+			if (val < -1 || val > 0xff) {
+				ret = -EINVAL;
+			} else {
+				struct inet_sock *inet = inet_sk(sk);
+
+				if (val == -1)
+					val = 0;
+				inet->tos = val;
+			}
+			break;
+		default:
+			ret = -EINVAL;
+		}
+#if IS_ENABLED(CONFIG_IPV6)
+	} else if (level == SOL_IPV6) {
+		if (optlen != sizeof(int) || sk->sk_family != AF_INET6)
+			return -EINVAL;
+
+		val = *((int *)optval);
+		switch (optname) {
+		case IPV6_TCLASS:
+			if (val < -1 || val > 0xff) {
+				ret = -EINVAL;
+			} else {
+				struct ipv6_pinfo *np = inet6_sk(sk);
+
+				if (val == -1)
+					val = 0;
+				np->tclass = val;
+			}
+			break;
+		default:
+			ret = -EINVAL;
+		}
+#endif
+	} else if (level == SOL_TCP &&
+		   sk->sk_prot->setsockopt == tcp_setsockopt) {
+		if (optname == TCP_CONGESTION) {
+			char name[TCP_CA_NAME_MAX];
+
+			strncpy(name, optval, min_t(long, optlen,
+						    TCP_CA_NAME_MAX - 1));
+			name[TCP_CA_NAME_MAX - 1] = 0;
+			ret = tcp_set_congestion_control(sk, name, true, true,
+							 true);
+		} else {
+			struct inet_connection_sock *icsk = inet_csk(sk);
+			struct tcp_sock *tp = tcp_sk(sk);
+
+			if (optlen != sizeof(int))
+				return -EINVAL;
+
+			val = *((int *)optval);
+			switch (optname) {
+			case TCP_BPF_IW:
+				if (val <= 0 || tp->data_segs_out > tp->syn_data)
+					ret = -EINVAL;
+				else
+					tp->snd_cwnd = val;
+				break;
+			case TCP_BPF_SNDCWND_CLAMP:
+				if (val <= 0) {
+					ret = -EINVAL;
+				} else {
+					tp->snd_cwnd_clamp = val;
+					tp->snd_ssthresh = val;
+				}
+				break;
+			case TCP_SAVE_SYN:
+				if (val < 0 || val > 1)
+					ret = -EINVAL;
+				else
+					tp->save_syn = val;
+				break;
+			case TCP_KEEPIDLE:
+				if (val < 1 || val > MAX_TCP_KEEPIDLE) {
+					ret = -EINVAL;
+				} else {
+					tp->keepalive_time = val * HZ;
+					if (sock_flag(sk, SOCK_KEEPOPEN) &&
+					    !((1 << sk->sk_state) &
+					      (TCPF_CLOSE | TCPF_LISTEN))) {
+						u32 elapsed =
+							keepalive_time_elapsed(tp);
+
+						if (tp->keepalive_time > elapsed)
+							elapsed = tp->keepalive_time - elapsed;
+						else
+							elapsed = 0;
+						inet_csk_reset_keepalive_timer(sk,
+									       elapsed);
+					}
+				}
+				break;
+			case TCP_KEEPINTVL:
+				if (val < 1 || val > MAX_TCP_KEEPINTVL)
+					ret = -EINVAL;
+				else
+					tp->keepalive_intvl = val * HZ;
+				break;
+			case TCP_KEEPCNT:
+				if (val < 1 || val > MAX_TCP_KEEPCNT)
+					ret = -EINVAL;
+				else
+					tp->keepalive_probes = val;
+				break;
+			case TCP_SYNCNT:
+				if (val < 1 || val > MAX_TCP_SYNCNT)
+					ret = -EINVAL;
+				else
+					icsk->icsk_syn_retries = val;
+				break;
+			case TCP_USER_TIMEOUT:
+				if (val < 0)
+					ret = -EINVAL;
+				else
+					icsk->icsk_user_timeout = val;
+				break;
+			case TCP_NOTSENT_LOWAT:
+				WRITE_ONCE(tp->notsent_lowat, val);
+				sk->sk_write_space(sk);
+				break;
+			case TCP_WINDOW_CLAMP:
+				if (!val) {
+					if (sk->sk_state != TCP_CLOSE) {
+						ret = -EINVAL;
+						break;
+					}
+					tp->window_clamp = 0;
+				} else {
+					tp->window_clamp =
+						val < SOCK_MIN_RCVBUF / 2 ?
+						SOCK_MIN_RCVBUF / 2 : val;
+				}
+				break;
+			case TCP_BPF_DELACK_MAX:
+			case TCP_BPF_RTO_MIN:
+			default:
+				ret = -EINVAL;
+			}
+		}
+#endif
+	} else {
+		ret = -EINVAL;
+	}
+	return ret;
 }
 
 static int _bpf_getsockopt(struct sock *sk, int level, int optname,
 			   char *optval, int optlen)
 {
-	/* p11 K1: 4.19 lacks the 5.x socket/TCP APIs (SO_BINDTOIFINDEX,
-	 * saved_syn, icsk_delack_max, tls_sw...). None of the five
-	 * netbpfload objects use sockopt helpers; reject instead. */
-	return -EOPNOTSUPP;
+	if (!sk_fullsock(sk))
+		goto err_clear;
+
+	sock_owned_by_me(sk);
+
+	if (level == SOL_SOCKET) {
+		if (optlen != sizeof(int))
+			goto err_clear;
+
+		switch (optname) {
+		case SO_MARK:
+			*((int *)optval) = sk->sk_mark;
+			break;
+		case SO_PRIORITY:
+			*((int *)optval) = sk->sk_priority;
+			break;
+		case SO_BINDTOIFINDEX:
+			*((int *)optval) = sk->sk_bound_dev_if;
+			break;
+		default:
+			goto err_clear;
+		}
+#ifdef CONFIG_INET
+	} else if (level == SOL_TCP &&
+		   sk->sk_prot->getsockopt == tcp_getsockopt) {
+		struct inet_connection_sock *icsk;
+		struct tcp_sock *tp;
+
+		switch (optname) {
+		case TCP_CONGESTION:
+			icsk = inet_csk(sk);
+
+			if (!icsk->icsk_ca_ops || optlen <= 1)
+				goto err_clear;
+			strncpy(optval, icsk->icsk_ca_ops->name, optlen);
+			optval[optlen - 1] = 0;
+			break;
+		case TCP_SAVED_SYN:
+			tp = tcp_sk(sk);
+
+			if (optlen <= 0 || !tp->saved_syn ||
+			    optlen > tp->saved_syn[0])
+				goto err_clear;
+			memcpy(optval, tp->saved_syn + 1, optlen);
+			break;
+		default:
+			goto err_clear;
+		}
+	} else if (level == SOL_IP) {
+		struct inet_sock *inet = inet_sk(sk);
+
+		if (optlen != sizeof(int) || sk->sk_family != AF_INET)
+			goto err_clear;
+
+		switch (optname) {
+		case IP_TOS:
+			*((int *)optval) = (int)inet->tos;
+			break;
+		default:
+			goto err_clear;
+		}
+#if IS_ENABLED(CONFIG_IPV6)
+	} else if (level == SOL_IPV6) {
+		struct ipv6_pinfo *np = inet6_sk(sk);
+
+		if (optlen != sizeof(int) || sk->sk_family != AF_INET6)
+			goto err_clear;
+
+		switch (optname) {
+		case IPV6_TCLASS:
+			*((int *)optval) = (int)np->tclass;
+			break;
+		default:
+			goto err_clear;
+		}
+#endif
+#endif
+	} else {
+		goto err_clear;
+	}
+	return 0;
+err_clear:
+	memset(optval, 0, optlen);
+	return -EINVAL;
 }
 
 BPF_CALL_5(bpf_sock_addr_setsockopt, struct bpf_sock_addr_kern *, ctx,
